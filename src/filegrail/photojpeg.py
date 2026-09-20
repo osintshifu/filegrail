@@ -217,30 +217,56 @@ def _next_marker(handle: BinaryIO) -> tuple[int, int] | None:
             return marker[0], offset
 
 
+#: How much of an entropy-coded scan to search at a time.
+_ENTROPY_BLOCK = 1 << 16
+
+
 def _entropy_marker(
     handle: BinaryIO, markers: list[JpegMarker]
 ) -> tuple[tuple[int, int] | None, int]:
+    """The marker ending the entropy-coded scan, and the restarts found in it.
+
+    The scan is most of the file and holds no marker until it ends, so this walk
+    covers nearly every byte of the photograph. Searched a block at a time with
+    `bytes.find` rather than a byte at a time: the same work read one byte per
+    call costs a `tell` and a `read` for every byte of every file, which is what
+    put a folder of two hundred photographs beyond use.
+
+    A `0xFF` is a marker unless the byte after it is `0x00`, which is how the
+    scan escapes one in its own data. A run of them is padding before the real
+    marker, and the position reported is the first of the run.
+    """
     restarts = 0
+    base = handle.tell()
+    block = handle.read(_ENTROPY_BLOCK)
+    at = 0
     while True:
-        offset = handle.tell()
-        byte = handle.read(1)
-        if not byte:
-            return None, restarts
-        if byte != b"\xff":
+        first = block.find(0xFF, at)
+        last = first
+        while last >= 0 and last + 1 < len(block) and block[last + 1] == 0xFF:
+            last += 1
+        if first < 0 or last + 2 > len(block):
+            # No marker in what is in hand, or one that straddles the end of it.
+            # Whatever might still be part of a marker is kept and read on from.
+            keep = len(block) if first < 0 else first
+            base += keep
+            block = block[keep:] + handle.read(_ENTROPY_BLOCK)
+            at = 0
+            if len(block) < 2:
+                handle.seek(base + len(block))
+                return None, restarts
             continue
-        marker = handle.read(1)
-        while marker == b"\xff":
-            marker = handle.read(1)
-        if not marker:
-            return None, restarts
-        code = marker[0]
+        code = block[last + 1]
         if code == 0x00:
+            at = last + 2
             continue
         if 0xD0 <= code <= 0xD7:
-            markers.append(JpegMarker(_marker_name(code), code, offset, 2))
+            markers.append(JpegMarker(_marker_name(code), code, base + first, 2))
             restarts += 1
+            at = last + 2
             continue
-        return (code, offset), restarts
+        handle.seek(base + last + 2)
+        return (code, base + first), restarts
 
 
 def _marker_name(code: int) -> str:
