@@ -18,6 +18,15 @@ NOT_EVALUATED = "not evaluated"
 
 PHOTO_SUFFIXES = exif.SUFFIXES | {".png", ".apng", ".bmp", ".dib", ".gif", ".jfif"}
 
+#: How many bytes of pixel-bearing material one report may carry. Every map is
+#: bounded on its own and a collection is not: two hundred photographs from a
+#: phone measured 1.5 GB of HTML and 5.5 GB of memory to build, which is not a
+#: report. The page is larger than the figure here, because the images are
+#: carried as base64 and because the allowance is checked before a photograph
+#: rather than during it, so the last one admitted passes it: measured at 47 MB
+#: for the same two hundred. Raised or lifted with `--image-budget`.
+IMAGE_BUDGET = 24 * 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class PhotoFact:
@@ -42,6 +51,28 @@ class PhotoArtifact:
     width: int | None = None
     height: int | None = None
     parameters: str | None = None
+
+
+@dataclass(slots=True)
+class _Budget:
+    """What is left of a report's allowance for pixel-bearing material.
+
+    Spent in file order, and checked before a photograph rather than during it,
+    so what comes back is the first photographs whole. The alternative - every
+    photograph at a quality chosen by how many there were - would put maps of
+    an unstated fidelity next to each other, and this report says what each of
+    its images is.
+    """
+
+    limit: int | None
+    used: int = 0
+
+    @property
+    def spent(self) -> bool:
+        return self.limit is not None and self.used >= self.limit
+
+    def take(self, artifacts: list[PhotoArtifact]) -> None:
+        self.used += sum(len(artifact.data) for artifact in artifacts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +115,10 @@ class PhotoCollection:
     redacted: bool
     camera_groups: tuple[tuple[str, tuple[str, ...]], ...]
 
+    #: Photographs whose pixel material is in the page. Fewer than all of them
+    #: when the image budget ran out, and each of those says so for itself.
+    rendered: int = 0
+
     @property
     def summary(self) -> tuple[tuple[str, str], ...]:
         formats = Counter(photo.format for photo in self.photos)
@@ -111,13 +146,28 @@ class PhotoCollection:
                 "signals",
                 str(sum(fact.state == SIGNAL for one in self.photos for fact in one.facts)),
             ),
+            *(
+                (("images rendered", f"{self.rendered} of {len(self.photos)}"),)
+                if self.rendered < len(self.photos)
+                else ()
+            ),
         )
 
 
 def analyse_photos(
-    records: list[FileRecord], root: Path, *, redact: bool = False
+    records: list[FileRecord],
+    root: Path,
+    *,
+    redact: bool = False,
+    budget: int | None = IMAGE_BUDGET,
 ) -> PhotoCollection:
-    """Augment supported on-disk still images with bounded photo findings."""
+    """Augment supported on-disk still images with bounded photo findings.
+
+    `budget` caps the pixel-bearing bytes of the whole report; `None` lifts the
+    cap. Photographs past it keep every fact read from them and lose only their
+    pictures, and say which.
+    """
+    allowance = _Budget(budget)
     photos: list[PhotoResult] = []
     for record in records:
         path = Path(record.path)
@@ -125,7 +175,7 @@ def analyse_photos(
             continue
         if not path.is_file():
             continue
-        photos.append(_analyse_photo(len(photos) + 1, record, path, redact))
+        photos.append(_analyse_photo(len(photos) + 1, record, path, redact, allowance))
 
     groups: dict[str, list[str]] = {}
     for photo in photos:
@@ -134,10 +184,18 @@ def analyse_photos(
     camera_groups = tuple(
         (serial, tuple(paths)) for serial, paths in sorted(groups.items()) if len(paths) > 1
     )
-    return PhotoCollection(str(root.resolve()), tuple(photos), redact, camera_groups)
+    return PhotoCollection(
+        str(root.resolve()),
+        tuple(photos),
+        redact,
+        camera_groups,
+        rendered=sum(1 for photo in photos if photo.artifacts),
+    )
 
 
-def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) -> PhotoResult:
+def _analyse_photo(
+    number: int, record: FileRecord, path: Path, redact: bool, budget: _Budget
+) -> PhotoResult:
     suffix = path.suffix.lower()
     facts: list[PhotoFact] = []
     artifacts: list[PhotoArtifact] = []
@@ -210,7 +268,7 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
     ):
         if not found:
             continue
-        if not redact:
+        if not redact and not budget.spent:
             artifacts.append(_preview_artifact(key, label, found))
         facts.append(
             PhotoFact(
@@ -268,6 +326,14 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
                 "pixel-bearing artifacts omitted by redaction",
             )
         )
+    elif budget.spent:
+        methods.append(
+            MethodCoverage(
+                "Pixel diagnostics",
+                "not evaluated",
+                "the report's image budget is spent; the facts above are unaffected",
+            )
+        )
     else:
         from . import photopixels
 
@@ -298,6 +364,7 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
                     )
                 )
 
+    budget.take(artifacts)
     evidence = tuple(record.redacted().evidence if redact else record.evidence)
     camera = exif.camera(tags) if tags else _evidence_value(evidence, "Make", "Model")
     # A camera that fills the standard tag is the exception. `SerialNumber` and

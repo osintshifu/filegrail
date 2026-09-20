@@ -978,6 +978,8 @@ The report deliberately has no authenticity score. It separates facts, mechanica
 
 `--redact` removes every pixel-bearing preview and diagnostic from the HTML, in addition to redacting supported text values. The report remains one offline file with a CSP and no external assets.
 
+A report carries only so many megabytes of images. Photographs past that allowance keep every fact read from them, lose their pictures and say so, and the report states how many were rendered. Raise the allowance, or remove it, with `--image-budget`.
+
 ---
 
 ## Usage
@@ -1044,6 +1046,7 @@ One output form at a time: `--timeline`, `--json`, `--html`, `--graphml` and `--
 | `--hash` | Compute SHA-256 for each photograph |
 | `--redact` | Redact supported text and omit every pixel-bearing artifact |
 | `--no-recurse` | Analyze only the named directory level |
+| `--image-budget MB` | Megabytes of images one report may carry, `0` for no limit |
 
 ### Exit codes
 

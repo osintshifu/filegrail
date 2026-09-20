@@ -258,6 +258,11 @@ def _compare_parser() -> argparse.ArgumentParser:
 
 
 def _photo_parser() -> argparse.ArgumentParser:
+    # Imported here so the default in the help text is the one the analyser
+    # uses, without the cost of loading the photo readers to build any other
+    # parser.
+    from .photo import IMAGE_BUDGET
+
     parser = argparse.ArgumentParser(
         prog="filegrail photo",
         description="Build one self-contained HTML forensic report for still photographs.",
@@ -282,8 +287,30 @@ def _photo_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hash", action="store_true", dest="hash_files", help="Compute SHA-256 for each image."
     )
+    parser.add_argument(
+        "--image-budget",
+        type=_megabytes,
+        default=IMAGE_BUDGET // (1024 * 1024),
+        metavar="MB",
+        help=(
+            "Megabytes of previews and diagnostic maps one report may carry "
+            "(default: %(default)s, 0 for no limit). Photographs past it keep every "
+            "fact read from them and lose only their pictures."
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"filegrail {__version__}")
     return parser
+
+
+def _megabytes(value: str) -> int:
+    """A size in whole megabytes, which cannot be negative."""
+    try:
+        size = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number of megabytes: {value}") from None
+    if size < 0:
+        raise argparse.ArgumentTypeError("a budget cannot be negative")
+    return size
 
 
 def _doctor_parser() -> argparse.ArgumentParser:
@@ -640,7 +667,9 @@ def _photo(rest: list[str]) -> int:
         follow_archives=False,
         suffixes=PHOTO_SUFFIXES,
     )
-    collection = analyse_photos(records, root, redact=args.redact)
+    collection = analyse_photos(
+        records, root, redact=args.redact, budget=args.image_budget * 1024 * 1024 or None
+    )
     if not collection.photos:
         print(f"filegrail: no supported photographs found in {args.path}", file=sys.stderr)
         return 2
