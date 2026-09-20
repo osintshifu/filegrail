@@ -23,7 +23,7 @@
 
 <div align="center">
 
-[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · [Photo lab](#photo-forensics-reports) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Usage](#usage) · [Automation](#automation-and-exports)
+[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Usage](#usage) · [Automation](#automation-and-exports)
 
 </div>
 
@@ -207,12 +207,6 @@ or:
 uv tool install filegrail
 ```
 
-For the photo report's pixel diagnostics, install the optional extra:
-
-```bash
-pipx install 'filegrail[photo]'
-```
-
 Analyze one file:
 
 ```bash
@@ -247,12 +241,6 @@ Create a self-contained HTML investigation report:
 
 ```bash
 filegrail ./evidence --pivots --html -o report.html
-```
-
-Create the dedicated photo-forensics report:
-
-```bash
-filegrail photo ./photos --out photo-report.html
 ```
 
 [View an example HTML report](https://osintshifu.github.io/filegrail/example-report.html), built from an invented case.
@@ -955,37 +943,6 @@ The complete report remains one portable HTML file.
 
 ---
 
-## Photo-forensics reports
-
-`filegrail photo` builds a separate HTML report for one still image or a directory of images:
-
-```bash
-filegrail photo ./photos --out photo-report.html --hash
-```
-
-The zero-dependency structural pass records:
-
-- EXIF IFD0, EXIF, GPS, Interoperability, SubIFD and IFD1 structures;
-- validated embedded JPEG thumbnails with dimensions, byte count and SHA-256;
-- JPEG marker order and offsets, encoding, precision, dimensions, components and sampling;
-- quantization and Huffman table summaries, restart interval, scan count, comments, EOI and trailing bytes;
-- an exact IJG quantization-table match or a clearly labelled nearest-quality heuristic;
-- supported dimension conflicts, materially different thumbnail aspect ratios and repeated camera-body serials.
-
-With `filegrail[photo]`, the same report also carries bounded image diagnostics: a report preview, RGB and luminance histogram, luminance gradient, selected bit planes, local median residual, ELA at qualities 90 and 75, and comparison with an embedded thumbnail. Every map names its method and parameters. A failed method is isolated and does not invalidate the other results.
-
-The report deliberately has no authenticity score. It separates facts, mechanically supported conflicts, review signals and methods that were not evaluated. These observations do not prove that a photograph is authentic or manipulated.
-
-The page shows each photograph from where it lies on disk and writes its diagnostic maps to a directory beside itself, because a map is computed and exists nowhere else. The page is then small and a browser loads only what is on screen. Every photograph is hashed, so a reader can tell whether the file being displayed is still the file that was read.
-
-`--embed` carries every image inside the page instead, as one portable file with a CSP and no external references. That is the form to hand to somebody, and the larger one: two hundred photographs measured 1.5 MB linked and 1.5 GB embedded.
-
-`--redact` removes every pixel-bearing preview and diagnostic, in addition to redacting supported text values.
-
-A report produces only so many megabytes of images. Photographs past that allowance keep every fact read from them, lose their pictures and say so, and the report states how many were rendered. Raise the allowance, or remove it, with `--image-budget`.
-
----
-
 ## Usage
 
 ```text
@@ -1001,7 +958,6 @@ Running `filegrail` without arguments shows the command overview without startin
 | --- | --- |
 | `filegrail PATH` | Analyze a file or directory |
 | `filegrail scan PATH` | Explicit scan form |
-| `filegrail photo PATH --out FILE` | Build the dedicated photo-forensics HTML report |
 | `filegrail explain FILE` | Show the evidence behind one file |
 | `filegrail compare A B` | Compare two files |
 | `filegrail doctor` | Inspect available local evidence sources |
@@ -1042,17 +998,6 @@ Running `filegrail` without arguments shows the command overview without startin
 
 One output form at a time: `--timeline`, `--json`, `--html`, `--graphml` and `--graph-csv` exclude one another.
 
-### Photo report options
-
-| Option | Purpose |
-| --- | --- |
-| `-o`, `--out FILE` | Required HTML destination; maps are written to `FILE.files` beside it |
-| `--embed` | Carry every image inside the page, as one portable file |
-| `--hash` | Compute SHA-256 for each photograph |
-| `--redact` | Redact supported text and omit every pixel-bearing artifact |
-| `--no-recurse` | Analyze only the named directory level |
-| `--image-budget MB` | Megabytes of images one report may produce, `0` for no limit |
-
 ### Exit codes
 
 | Code | Meaning |
@@ -1074,7 +1019,6 @@ One output form at a time: `--timeline`, `--json`, `--html`, `--graphml` and `--
 | Skip document content | `filegrail ./case --pivots --meta` |
 | Build a timeline | `filegrail ./case --timeline` |
 | Find photographs sharing camera metadata | `filegrail ./photos --cluster` |
-| Build a full photograph analysis report | `filegrail photo ./photos --out photo-report.html` |
 | Analyze a copied profile | `filegrail /mnt/evidence --home /mnt/profile` |
 | Hash every file | `filegrail ./case --hash --json > report.json` |
 | Export GraphML | `filegrail ./case --graphml -o graph.graphml` |
@@ -1307,7 +1251,6 @@ FileGrail only analyzes evidence that still exists and that its readers understa
 - an embedded thumbnail may be stale, independently edited or produced by a different workflow stage;
 - a JPEG quality estimate describes the observed quantization tables, not necessarily the image's first save;
 - ELA, bit planes, gradients and residual maps are review aids, not manipulation detectors;
-- the photo report does not perform PRNU camera attribution, learned deepfake detection or a general resampling verdict;
 - C2PA hard binding is checked where supported, but certificate-chain and signer trust are not verified;
 - Authenticode presence is reported but signer trust is not established;
 - PDF signature dictionaries are reported as structures, not as proof of signature validity;
