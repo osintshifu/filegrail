@@ -19,7 +19,7 @@ import struct
 from pathlib import Path
 
 from ...preview import EmbeddedPreview, jpeg_dimensions
-from . import jpeg
+from . import jpeg, makernotes
 
 #: What the parser reads from: a block lifted out of a container, or a whole
 #: file mapped into memory. It only takes lengths, slices and packed fields,
@@ -45,6 +45,7 @@ SUB_IFDS = 0x014A
 INTEROP_IFD = 0xA005
 DATETIME_ORIGINAL = 0x9003
 LENS_MODEL = 0xA434
+MAKER_NOTE = 0x927C
 
 THUMBNAIL_COMPRESSION = 0x0103
 THUMBNAIL_OFFSET = 0x0201
@@ -141,6 +142,11 @@ class Exif(dict[int, object]):
         self.thumbnail: dict[int, object] = {}
         self.sub_ifds: list[dict[int, object]] = []
         self.preview: EmbeddedPreview | None = None
+        self.maker: makernotes.MakerNotes | None = None
+        #: Where the maker note lies in the TIFF block, kept until the make is
+        #: known: which vendor wrote the note decides how to read it, and the
+        #: make is in a directory that may be parsed after the note is found.
+        self.maker_at: tuple[int, int] | None = None
 
 
 def read_exif(path: Path) -> Exif | None:
@@ -284,6 +290,13 @@ def _parse_tiff(data: Raw) -> Exif | None:
         if directory:
             exif.sub_ifds.append(directory)
 
+    if exif.maker_at is not None:
+        at, size = exif.maker_at
+        make = exif.get(MAKE)
+        exif.maker = makernotes.read(
+            data, at, size, endian, make if isinstance(make, str) else None
+        )
+
     if isinstance(next_ifd, int) and next_ifd > 0:
         _read_ifd(data, next_ifd, endian, exif.thumbnail, exif, seen)
         exif.preview = _thumbnail_preview(data, exif.thumbnail)
@@ -312,6 +325,14 @@ def _read_ifd(
     for index in range(count):
         entry = offset + 2 + index * 12
         tag, kind, length = struct.unpack_from(endian + "HHI", data, entry)
+
+        if tag == MAKER_NOTE:
+            # A vendor block, not a value. Decoding it as one turns a Fujifilm
+            # note into the single word `FUJIFILM` and drops the rest, so its
+            # position is kept instead and the block is read once the make is
+            # known.
+            exif.maker_at = _locate(data, entry, endian, length)
+            continue
 
         value = _read_value(data, entry, endian, kind, length)
         if value is not None:
@@ -399,6 +420,18 @@ def _read_value(data: Raw, entry: int, endian: str, kind: int, length: int) -> o
         return values[0] if length == 1 else values
 
     return None
+
+
+def _locate(data: Raw, entry: int, endian: str, size: int) -> tuple[int, int] | None:
+    """Where one entry's bytes lie, for a value read later rather than now."""
+    if size <= 0:
+        return None
+    if size <= 4:
+        return entry + 8, size
+    (offset,) = struct.unpack_from(endian + "I", data, entry + 8)
+    if offset <= 0 or offset + size > len(data):
+        return None
+    return offset, size
 
 
 def _payload(data: Raw, entry: int, endian: str, size: int) -> bytes | None:
