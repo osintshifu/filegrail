@@ -55,7 +55,7 @@ differs from the main image. Pixel differences are signals, not proof of editing
 
 ## Optional pixel diagnostics
 
-When Pillow and NumPy are importable, create bounded derived PNG artifacts for:
+When Pillow and NumPy are importable, create bounded derived image artifacts for:
 
 - a main-image report preview;
 - RGB and luminance histograms;

@@ -13,6 +13,25 @@ from .preview import EmbeddedPreview
 
 _MAX_SOURCE_PIXELS = 100_000_000
 
+#: The whole report travels as one file, and a lossless PNG of a 1024 px
+#: photograph costs an order of magnitude more than a high-quality JPEG of it.
+#: What an artifact is decides how much of that saving it may take.
+#:
+#: A histogram is line art and a bit plane holds one bit per pixel. Both are
+#: exact by construction and both compress well losslessly, so neither is
+#: allowed to gain detail it never had.
+_LOSSLESS = frozenset({"histogram", "bit-planes"})
+
+#: A difference map is a measurement, and it is read at pixel scale as well as
+#: across regions. Region structure survives ordinary compression intact, but
+#: pixel-level agreement does not, so these maps are compressed only lightly.
+_MEASURED = frozenset({"luminance-gradient", "noise-residual", "ela-q90", "ela-q75"})
+
+#: Chroma is never subsampled: in a difference map the colour of a residual is
+#: the measurement, not decoration.
+_MEASURED_QUALITY = 93
+_PHOTO_QUALITY = 88
+
 
 def available() -> bool:
     """Return whether both optional pixel-processing libraries are importable."""
@@ -22,7 +41,7 @@ def available() -> bool:
 def analyse_pixels(
     path: Path, previews: Iterable[EmbeddedPreview], *, max_edge: int = 1024
 ) -> tuple[list[PhotoArtifact], list[PhotoFact]]:
-    """Build bounded PNG diagnostics, isolating failure of each derived method."""
+    """Build bounded image diagnostics, isolating failure of each derived method."""
     if not available():
         return [], [
             PhotoFact(
@@ -143,18 +162,33 @@ def _working_image(path: Path, max_edge: int) -> Any:
 
 
 def _artifact(key: str, label: str, method: str, image: Any, parameters: str) -> PhotoArtifact:
+    """Encode one derived image, saying in its parameters how it was stored.
+
+    A reader has to be able to tell a measurement from the report's own
+    encoding, so the encoding is named beside every other parameter rather
+    than left to be inferred from the media type.
+    """
     buffer = BytesIO()
-    image.save(buffer, format="PNG", optimize=False, compress_level=9)
+    if key in _LOSSLESS:
+        image.save(buffer, format="PNG", optimize=False, compress_level=9)
+        mime, encoding = "image/png", "lossless PNG"
+    else:
+        quality = _MEASURED_QUALITY if key in _MEASURED else _PHOTO_QUALITY
+        # `optimize` is deliberately off. Its second Huffman pass wants one
+        # buffer for a whole scan and a residual map is close to pure noise,
+        # which overflows it and loses the map. A few percent is not worth that.
+        image.save(buffer, format="JPEG", quality=quality, subsampling=0, optimize=False)
+        mime, encoding = "image/jpeg", f"JPEG quality {quality}"
     width, height = image.size
     return PhotoArtifact(
         key,
         label,
         method,
-        "image/png",
+        mime,
         buffer.getvalue(),
         width,
         height,
-        parameters,
+        f"{parameters}; report encoding {encoding}",
     )
 
 
@@ -204,7 +238,9 @@ def _bit_planes(image: Any) -> Any:
         plane = ((luminance >> bit) & 1) * 255
         tile = Image.fromarray(plane.astype(np.uint8), mode="L")
         canvas.paste(tile, ((position % 2) * width, (position // 2) * height))
-    return canvas
+    # A bit plane holds one bit per pixel. Storing it as one, without dither
+    # inventing intermediate values, is both exact and a fraction of the size.
+    return canvas.convert("1", dither=Image.Dither.NONE)
 
 
 def _noise_residual(image: Any) -> Any:

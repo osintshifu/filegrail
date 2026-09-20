@@ -42,7 +42,14 @@ def test_creates_bounded_declared_pixel_diagnostics(tmp_path: Path):
         ("ela-q75", 4, 4),
         ("embedded-preview-comparison", 12, 4),
     ]
-    assert all(item.mime == "image/png" and item.data.startswith(b"\x89PNG") for item in artifacts)
+    assert [(item.key, item.mime) for item in artifacts if item.mime != "image/jpeg"] == [
+        ("histogram", "image/png"),
+        ("bit-planes", "image/png"),
+    ]
+    assert all(
+        item.data.startswith(b"\xff\xd8" if item.mime == "image/jpeg" else b"\x89PNG")
+        for item in artifacts
+    )
     assert [item.method for item in artifacts] == [
         "bounded RGB decode",
         "channel histogram",
@@ -67,14 +74,53 @@ def test_declares_parameters_for_every_derived_map(tmp_path: Path):
     artifacts, _facts = analyse_pixels(path, [], max_edge=1024)
 
     assert [item.parameters for item in artifacts] == [
-        "RGB; longest edge <= 1024 px",
-        "256 bins; RGB and luminance; working image 6 x 4 px",
-        "central differences; luminance; normalized per image",
-        "luminance bit planes 7, 4, 1, 0",
-        "3 x 3 median residual; absolute; normalized per image",
-        "JPEG recompression quality=90; absolute RGB difference; normalized per image",
-        "JPEG recompression quality=75; absolute RGB difference; normalized per image",
+        "RGB; longest edge <= 1024 px; report encoding JPEG quality 88",
+        "256 bins; RGB and luminance; working image 6 x 4 px; report encoding lossless PNG",
+        "central differences; luminance; normalized per image; report encoding JPEG quality 93",
+        "luminance bit planes 7, 4, 1, 0; report encoding lossless PNG",
+        "3 x 3 median residual; absolute; normalized per image; report encoding JPEG quality 93",
+        "JPEG recompression quality=90; absolute RGB difference; normalized per image; "
+        "report encoding JPEG quality 93",
+        "JPEG recompression quality=75; absolute RGB difference; normalized per image; "
+        "report encoding JPEG quality 93",
     ]
+
+
+@pytest.mark.skipif(not available(), reason="photo extra is not installed")
+def test_encodes_a_noise_map_that_defeats_the_jpeg_optimizer(tmp_path: Path):
+    """Noise is what a residual map looks like, and it is what breaks the encoder.
+
+    JPEG's optimizing pass wants one buffer for a whole scan, and a map of pure
+    noise overflows it. Losing every derived map of one photograph to that is
+    not a trade worth the few percent the pass saves.
+    """
+    import random
+
+    from PIL import Image
+
+    random.seed(7)
+    noise = Image.new("RGB", (256, 256))
+    noise.putdata(
+        [
+            (random.randrange(256), random.randrange(256), random.randrange(256))
+            for _ in range(256 * 256)
+        ]
+    )
+    path = tmp_path / "noise.png"
+    noise.save(path)
+
+    artifacts, facts = analyse_pixels(path, [], max_edge=256)
+
+    assert [item.key for item in artifacts] == [
+        "main-preview",
+        "histogram",
+        "luminance-gradient",
+        "bit-planes",
+        "noise-residual",
+        "ela-q90",
+        "ela-q75",
+    ]
+    assert [fact.label for fact in facts] == ["Pixel working image"]
 
 
 @pytest.mark.skipif(not available(), reason="photo extra is not installed")

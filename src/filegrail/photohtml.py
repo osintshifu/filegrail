@@ -413,12 +413,23 @@ def _notes(collection: PhotoCollection) -> str:
         if collection.redacted
         else ""
     )
+    # Every map names its own encoding, but the consequence belongs here: a
+    # reader looking for fine texture in an ELA map has to know that some of it
+    # can come from the report rather than from the photograph.
+    encoding = (
+        " Photographs and continuous-tone maps are embedded as JPEG so the report stays one"
+        " portable file, and fine texture in a map can come from that encoding. Histograms"
+        " and bit planes are stored losslessly."
+        if any(photo.artifacts for photo in collection.photos)
+        else ""
+    )
     return (
         '<section class="report-notes" aria-labelledby="notes-title"><div class="section-head">'
         '<h2 id="notes-title">Interpretation boundary</h2></div><p>'
         "This report records observable file structure, metadata and declared image transformations. "
         "A conflict is a mechanically supported disagreement. A signal identifies material for review. "
         "Neither state establishes that a photograph is authentic or manipulated."
+        + encoding
         + redaction
         + "</p></section>"
     )
