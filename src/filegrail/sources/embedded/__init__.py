@@ -308,7 +308,20 @@ def read_maker_notes(path: Path) -> EvidenceRecord | None:
 
     notes = tags.maker
     fields = {"Vendor": notes.vendor, **notes.fields}
+    if notes.preview:
+        # Described, never carried: the bytes stay out of the record the same
+        # way the EXIF thumbnail's do, and the photo report reads them direct.
+        fields.update(
+            {
+                "Preview:Format": "JPEG",
+                "Preview:Dimensions": f"{notes.preview.width}x{notes.preview.height}",
+                "Preview:Bytes": str(len(notes.preview.data)),
+                "Preview:SHA256": notes.preview.sha256,
+            }
+        )
     detail = [f"{notes.entries} entries", notes.scheme]
+    if notes.preview:
+        detail.append("carries a preview image")
     if notes.byte_order != makernotes.SAME_ORDER:
         # The camera writes the note in the file's own byte order. The other
         # order means something rewrote the file around the block.

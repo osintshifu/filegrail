@@ -178,7 +178,7 @@ def _contact_sheet(collection: PhotoCollection) -> str:
         )
     cards = []
     for photo in collection.photos:
-        artifact = _first_artifact(photo, "main-preview", "embedded-preview")
+        artifact = _first_artifact(photo, "main-preview", "embedded-preview", "maker-preview")
         image = (
             _image(artifact, photo.name) if artifact else '<div class="empty">Media omitted</div>'
         )
@@ -228,7 +228,7 @@ def _stage(photo: PhotoResult, redacted: bool) -> str:
         )
     else:
         figures = []
-        for key in ("main-preview", "embedded-preview"):
+        for key in ("main-preview", "embedded-preview", "maker-preview"):
             artifact = _first_artifact(photo, key)
             if artifact:
                 figures.append(
@@ -302,7 +302,7 @@ def _diagnostics(photo: PhotoResult) -> str:
     artifacts = [
         artifact
         for artifact in photo.artifacts
-        if artifact.key not in {"main-preview", "embedded-preview"}
+        if artifact.key not in {"main-preview", "embedded-preview", "maker-preview"}
     ]
     if not artifacts and photo.jpeg is None:
         return ""

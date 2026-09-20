@@ -206,3 +206,67 @@ def test_the_photo_report_names_the_block_and_the_body_it_identifies(tmp_path: P
     page = render_photo_html(collection)
     assert "Maker notes" in page
     assert "3105364" in page
+
+
+def test_a_note_that_is_itself_an_image_is_read_as_a_preview(tmp_path: Path):
+    """Some cameras put a whole JPEG where a directory is supposed to go.
+
+    A Samsung Digimax writes a 320x240 preview into the block and nothing else,
+    while the standard EXIF thumbnail beside it is 75x56. Read as a directory
+    the block is noise; read as what it is, it is the largest picture the file
+    carries apart from the photograph.
+    """
+    from PIL import Image
+
+    rendered = tmp_path / "preview.jpg"
+    Image.new("RGB", (320, 240), (40, 90, 140)).save(rendered, quality=70)
+    path = tmp_path / "samsung.jpg"
+    jpeg_with_maker_note(path, "Samsung Techwin", "<Digimax i50 MP3>", rendered.read_bytes())
+
+    tags = read_exif(path)
+
+    assert tags is not None and tags.maker is not None
+    assert tags.maker.vendor == "Samsung"
+    assert tags.maker.entries == 0
+    preview = tags.maker.preview
+    assert preview is not None
+    assert (preview.width, preview.height) == (320, 240)
+    assert preview.mime == "image/jpeg"
+    assert preview.source == "maker note"
+    assert preview.data.startswith(b"\xff\xd8") and preview.data.endswith(b"\xff\xd9")
+
+
+def test_the_photo_report_shows_a_preview_the_maker_note_carries(tmp_path: Path):
+    """Two previews in one file are two pieces of evidence, not a duplicate.
+
+    They are written by different parts of the camera at different sizes, and
+    either can be the stale one. Showing only the EXIF thumbnail would hide the
+    larger of the two behind the smaller.
+    """
+    from PIL import Image
+
+    from filegrail.photo import analyse_photos
+    from filegrail.scan import scan
+
+    rendered = tmp_path / "preview.jpg"
+    Image.new("RGB", (320, 240), (40, 90, 140)).save(rendered, quality=70)
+    case = tmp_path / "case"
+    case.mkdir()
+    jpeg_with_maker_note(
+        case / "samsung.jpg", "Samsung Techwin", "<Digimax i50 MP3>", rendered.read_bytes()
+    )
+
+    records = scan(case, use_shell_history=False, home=tmp_path / "empty")
+    note = next(r for r in records[0].evidence if r.block == "maker-notes")
+
+    assert note.fields["Preview:Dimensions"] == "320x240"
+    assert note.fields["Preview:Format"] == "JPEG"
+    assert "Preview:SHA256" in note.fields
+    assert b"\xff\xd8" not in note.fields["Preview:SHA256"].encode()
+
+    photo = analyse_photos(records, case).photos[0]
+    keys = [artifact.key for artifact in photo.artifacts]
+
+    assert "maker-preview" in keys
+    labels = [fact.label for fact in photo.facts]
+    assert "Maker note preview" in labels

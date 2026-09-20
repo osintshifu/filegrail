@@ -24,6 +24,8 @@ import mmap
 import struct
 from dataclasses import dataclass, field
 
+from ...preview import EmbeddedPreview, jpeg_dimensions
+
 Raw = bytes | mmap.mmap
 
 _MAX_ENTRIES = 256
@@ -43,6 +45,7 @@ _WIDTHS = {_BYTE: 1, _ASCII: 1, _SHORT: 2, _LONG: 4, 5: 8, 6: 1, _UNDEFINED: 1, 
 TIFF_RELATIVE = "offsets from the TIFF header"
 NOTE_RELATIVE = "offsets from the start of the note"
 NIKON_TIFF = "own TIFF header inside the note"
+IMAGE_ONLY = "an image rather than a directory"
 
 #: Canon. The serial is a plain integer the body stamps on every frame; the
 #: owner name is typed in once by a person. `FileNumber` counts frames within a
@@ -88,6 +91,11 @@ class MakerNotes:
     fields: dict[str, str] = field(default_factory=dict)
     byte_order: str = SAME_ORDER
 
+    #: A picture carried in the block itself, where the vendor put one there
+    #: instead of a directory. Frequently larger than the EXIF thumbnail, and
+    #: kept out of the serialised fields the same way every other preview is.
+    preview: EmbeddedPreview | None = None
+
 
 def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerNotes | None:
     """Decode the maker note lying at `at` inside the TIFF block `data`."""
@@ -103,6 +111,10 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         return _fujifilm(note)
 
     vendor = _vendor(make)
+    if note.startswith(b"\xff\xd8\xff"):
+        # Not a directory at all. A few compacts write a whole JPEG here, and
+        # it is usually several times the size of the EXIF thumbnail.
+        return MakerNotes(vendor, IMAGE_ONLY, 0, size, preview=_image(note))
     # Canon writes the directory at the first byte and addresses its values in
     # the file's own TIFF space, so the whole block has to stay in reach. Every
     # other vendor without a signature is tried the same way: a directory is
@@ -145,6 +157,24 @@ def _fujifilm(note: bytes) -> MakerNotes | None:
     (first,) = struct.unpack_from("<I", note, 8)
     entries = _entries(note, first, "<", base=0, limit=len(note))
     return _notes("Fujifilm", NOTE_RELATIVE, entries, len(note), {}, "<")
+
+
+def _image(note: bytes) -> EmbeddedPreview | None:
+    """The JPEG a note consists of, trimmed to its own end marker.
+
+    The declared length of the block is rounded up by some writers, so the
+    trailing padding is dropped rather than carried into the preview. A JPEG
+    with no end marker is not returned at all: an image this reader cannot see
+    the end of is one it cannot say it read.
+    """
+    end = note.rfind(b"\xff\xd9")
+    if end < 0:
+        return None
+    data = note[: end + 2]
+    size = jpeg_dimensions(data)
+    if size is None:
+        return None
+    return EmbeddedPreview("maker note", "image/jpeg", data, size[0], size[1])
 
 
 def _byte_order(data: Raw, at: int, endian: str, limit: int) -> tuple[str, str] | None:

@@ -95,7 +95,10 @@ class PhotoCollection:
                 "embedded previews",
                 str(
                     sum(
-                        any(fact.label == "Embedded preview" for fact in one.facts)
+                        any(
+                            fact.label in {"Embedded preview", "Maker note preview"}
+                            for fact in one.facts
+                        )
                         for one in self.photos
                     )
                 ),
@@ -200,17 +203,22 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
             )
 
     preview = tags.preview if tags else None
-    if preview:
+    maker_preview = tags.maker.preview if tags and tags.maker else None
+    for key, label, found in (
+        ("embedded-preview", "Embedded preview", preview),
+        ("maker-preview", "Maker note preview", maker_preview),
+    ):
+        if not found:
+            continue
         if not redact:
-            artifacts.append(_preview_artifact(preview))
-        dimensions = _dimensions(preview.width, preview.height)
+            artifacts.append(_preview_artifact(key, label, found))
         facts.append(
             PhotoFact(
-                "Embedded preview",
-                f"{dimensions}, {len(preview.data)} bytes",
+                label,
+                f"{_dimensions(found.width, found.height)}, {len(found.data)} bytes",
                 FACT,
-                preview.source,
-                preview.sha256,
+                found.source,
+                found.sha256,
             )
         )
 
@@ -274,7 +282,7 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
         else:
             try:
                 pixel_artifacts, pixel_facts = photopixels.analyse_pixels(
-                    path, [preview] if preview else []
+                    path, _largest_first(preview, maker_preview)
                 )
             except Exception as error:
                 methods.append(MethodCoverage("Pixel diagnostics", "failed", type(error).__name__))
@@ -316,10 +324,20 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
     )
 
 
-def _preview_artifact(preview: EmbeddedPreview) -> PhotoArtifact:
+def _largest_first(*previews: EmbeddedPreview | None) -> list[EmbeddedPreview]:
+    """The previews a file carries, biggest first.
+
+    Only one is compared against the photograph, and the larger one shows more
+    of whatever the comparison is for.
+    """
+    found = [preview for preview in previews if preview is not None]
+    return sorted(found, key=lambda preview: len(preview.data), reverse=True)
+
+
+def _preview_artifact(key: str, label: str, preview: EmbeddedPreview) -> PhotoArtifact:
     return PhotoArtifact(
-        "embedded-preview",
-        "Embedded EXIF preview",
+        key,
+        label,
         preview.source,
         preview.mime,
         preview.data,
