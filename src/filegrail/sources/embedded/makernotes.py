@@ -188,15 +188,22 @@ _NIKON = {
 class _Directory:
     """One directory as found: what it said it held, and what came out of it.
 
-    The two differ when an entry names a type this reader has no width for, or
-    when its value is addressed into a file that was rewritten around the block
-    and the offset can no longer be believed. `declared` describes the note and
-    `values` describes the reading, and a report that prints only the second
-    says the camera wrote less than it did.
+    Two unrelated things stop an entry becoming a field, and a reader told only
+    how many were lost cannot tell which happened. `undecoded` is this reader's
+    own limit: a type it has no width for, a block too large to be a field, an
+    offset resolving outside the data. It says nothing about the file.
+
+    `distrusted` is a refusal. The note's byte order disagrees with the file
+    around it, so the block was moved after the camera wrote it and the offsets
+    inside address a layout that is gone. Whatever lies at them now belongs to
+    the rewrite, and reading it would turn somebody else's bytes into a camera
+    field. That one says a great deal about the file.
     """
 
     declared: int
     values: dict[int, tuple[int, bytes]] = field(default_factory=dict)
+    undecoded: int = 0
+    distrusted: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,10 +217,11 @@ class MakerNotes:
     fields: dict[str, str] = field(default_factory=dict)
     byte_order: str = SAME_ORDER
 
-    #: How many of the declared entries this reader could believe. Fewer than
-    #: `entries` when the note names a type it has no width for, or when the
-    #: block was moved and its offsets no longer address their values.
-    readable: int = 0
+    #: Entries this reader could not read, and entries it would not: its own
+    #: limits against a block that was moved after it was written. Reported
+    #: apart because only the second is evidence about the file.
+    undecoded: int = 0
+    distrusted: int = 0
 
     #: A picture carried in the block itself, where the vendor put one there
     #: instead of a directory. Frequently larger than the EXIF thumbnail, and
@@ -476,7 +484,8 @@ def _notes(
         size,
         fields,
         byte_order,
-        readable=len(directory.values),
+        undecoded=directory.undecoded,
+        distrusted=directory.distrusted,
         declared_preview=declared,
     )
 
@@ -514,6 +523,7 @@ def _entries(
         return _Directory(0)
 
     found: dict[int, tuple[int, bytes]] = {}
+    undecoded = distrusted = 0
     for index in range(count):
         entry = offset + 2 + index * 12
         try:
@@ -522,21 +532,27 @@ def _entries(
             break
         width = _WIDTHS.get(kind)
         if width is None or length == 0:
+            undecoded += 1
             continue
         size = width * length
         if size > _MAX_VALUE:
+            # A block this big is a data dump rather than a field, whatever the
+            # vendor calls it, and nothing here names one.
+            undecoded += 1
             continue
         if size <= 4:
             found[tag] = (kind, bytes(data[entry + 8 : entry + 8 + size]))
             continue
         if not trust_offsets:
+            distrusted += 1
             continue
         (at,) = struct.unpack_from(endian + "I", data, entry + 8)
         at += base
         if at <= 0 or at + size > limit:
+            undecoded += 1
             continue
         found[tag] = (kind, bytes(data[at : at + size]))
-    return _Directory(count, found)
+    return _Directory(count, found, undecoded, distrusted)
 
 
 def _text(raw: bytes) -> str | None:

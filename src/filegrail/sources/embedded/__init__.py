@@ -288,6 +288,10 @@ def _from_exif(path: Path, suffix: str) -> EvidenceRecord | None:
     )
 
 
+def _entry_count(count: int) -> str:
+    return "1 entry" if count == 1 else f"{count} entries"
+
+
 def read_maker_notes(path: Path) -> EvidenceRecord | None:
     """Return the vendor block a camera wrote beside its EXIF, if any.
 
@@ -322,15 +326,16 @@ def read_maker_notes(path: Path) -> EvidenceRecord | None:
     if notes.declared_preview:
         at, length = notes.declared_preview
         fields["Preview:Declared"] = f"{length} bytes at offset {at} from the TIFF header"
-    counted = f"{notes.entries} entries"
-    if notes.readable != notes.entries:
-        # Both numbers, because either alone misleads. An entry can go unread
-        # for reasons that say nothing - a block too large to be a field, a
-        # degenerate length - and for one that says a great deal, which is a
-        # byte order that disagrees with the container. That one is named below,
-        # so the reader has the size of the gap and its reason together.
-        counted += f", {notes.readable} of them readable"
-    detail = [counted, notes.scheme]
+    detail = [_entry_count(notes.entries), notes.scheme]
+    # Named apart, because a reader given one number cannot tell this parser's
+    # limits from a block that was moved after the camera wrote it.
+    if notes.undecoded:
+        detail.append(f"{_entry_count(notes.undecoded)} this reader could not read")
+    if notes.distrusted:
+        detail.append(
+            f"{_entry_count(notes.distrusted)} dropped: the offsets address the file "
+            "as it stood before it was rewritten"
+        )
     if notes.preview:
         detail.append("carries a preview image")
     if notes.declared_preview and sum(notes.declared_preview) > path.stat().st_size:

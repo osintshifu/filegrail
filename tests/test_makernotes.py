@@ -515,14 +515,17 @@ def test_one_lens_on_two_bodies_groups_by_the_lens_and_not_by_the_camera(tmp_pat
     assert shared["lens"].basis == "Maker notes · LensSerialNumber"
 
 
-def test_a_note_says_how_many_entries_it_had_and_not_only_how_many_were_read(tmp_path: Path):
-    """A count of what survived reads as a count of what the camera wrote.
+def test_an_entry_dropped_for_a_bad_offset_is_told_apart_from_one_not_understood(
+    tmp_path: Path,
+):
+    """Why an entry was lost matters more than how many were.
 
-    This note declares three entries and two of them are believable. The third
-    is addressed by an offset into a file that was rewritten around the block,
-    so the bytes it points at are no longer the value and it is dropped. Saying
-    two would describe the reader rather than the note, and the difference
-    between the numbers is itself the sign that something rewrote the file.
+    This note declares three entries. Two are inline and survive. The third is
+    addressed by an offset, and the note's byte order disagrees with the file
+    around it, which means the block was moved after the camera wrote it and the
+    offset now points into a layout that is gone. That is a fact about the file.
+    An entry this reader simply has no way to read is a fact about the reader,
+    and a report that adds the two together says neither.
     """
     from filegrail.sources.embedded import read_maker_notes
 
@@ -534,7 +537,9 @@ def test_a_note_says_how_many_entries_it_had_and_not_only_how_many_were_read(tmp
     record = read_maker_notes(path)
 
     assert record is not None
-    assert "3 entries, 2 of them readable" in record.note
+    assert "3 entries" in record.note
+    assert "1 entry dropped" in record.note
+    assert "could not read" not in record.note
 
 
 def test_every_field_type_tiff_allows_is_counted(tmp_path: Path):
@@ -547,12 +552,14 @@ def test_every_field_type_tiff_allows_is_counted(tmp_path: Path):
     from filegrail.sources.embedded import read_maker_notes
 
     signed_short, single, double = 8, 11, 12
+    # Tags this reader does not name, so the test measures the count and not
+    # what a named field would make of bytes of the wrong type.
     note, _values = ifd(
         [
             (0x0008, 4, struct.pack(">I", 1242489)),
-            (0x0094, signed_short, struct.pack(">h", -2)),
-            (0x0095, single, struct.pack(">f", 1.5)),
-            (0x0096, double, struct.pack(">d", 2.5)),
+            (0x0010, signed_short, struct.pack(">h", -2)),
+            (0x0011, single, struct.pack(">f", 1.5)),
+            (0x0012, double, struct.pack(">d", 2.5)),
         ],
         ">",
         value_base=0,
@@ -563,7 +570,10 @@ def test_every_field_type_tiff_allows_is_counted(tmp_path: Path):
     record = read_maker_notes(path)
 
     assert record is not None
-    # The eight-byte double is addressed rather than inlined, and the fixture
-    # cannot place it, so it is counted and not read. The other three are.
-    assert "4 entries, 3 of them readable" in record.note
-    assert record.fields["FileNumber"] == "124-2489"
+    # The eight-byte double is addressed rather than inlined and the fixture
+    # cannot place it, so one entry goes unread - and for this reader's own
+    # reason, not because the block was moved.
+    assert "4 entries" in record.note
+    assert "1 entry this reader could not read" in record.note
+    assert "dropped" not in record.note
+    assert record.fields == {"Vendor": "Canon", "FileNumber": "124-2489"}
