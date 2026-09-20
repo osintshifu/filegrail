@@ -270,3 +270,39 @@ def test_the_photo_report_shows_a_preview_the_maker_note_carries(tmp_path: Path)
     assert "maker-preview" in keys
     labels = [fact.label for fact in photo.facts]
     assert "Maker note preview" in labels
+
+
+def apple_note(unique_id: str, content_id: str) -> bytes:
+    """An `Apple iOS` note: signature, byte-order mark, then a directory.
+
+    Offsets count from the first byte of the note, and the order is Apple's own
+    rather than the file's, which is why the mark is there to be read.
+    """
+    preamble = b"Apple iOS\x00\x00\x01MM"
+    directory, values = ifd(
+        [(0x0020, 2, unique_id.encode() + b"\x00"), (0x002B, 2, content_id.encode() + b"\x00")],
+        ">",
+        value_base=len(preamble) + 2 + 2 * 12 + 4,
+    )
+    return preamble + directory + values
+
+
+def test_apple_notes_name_the_identifiers_that_tie_files_together(tmp_path: Path):
+    """An iPhone writes two identifiers here and neither is anywhere else.
+
+    `ImageUniqueID` names the photograph inside its library. `ContentIdentifier`
+    is shared with the short film a Live Photo records beside it, so it is the
+    thing that says a still and a video are one exposure.
+    """
+    unique = "A90ABD4D-79FE-45F3-837C-3B769EF04210"
+    content = "38CA8C91-85BC-45CE-A12B-26FD40383CD6"
+    path = tmp_path / "iphone.jpg"
+    jpeg_with_maker_note(path, "Apple", "iPhone 13 Pro Max", apple_note(unique, content))
+
+    tags = read_exif(path)
+
+    assert tags is not None and tags.maker is not None
+    assert tags.maker.vendor == "Apple"
+    assert tags.maker.entries == 2
+    assert tags.maker.fields["ImageUniqueID"] == unique
+    assert tags.maker.fields["ContentIdentifier"] == content

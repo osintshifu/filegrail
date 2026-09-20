@@ -63,6 +63,26 @@ _CANON = {
 #: every Konica Minolta under Konica, and the vendor is what a reader groups by.
 _TWO_WORD_MAKES = ("Konica Minolta", "Eastman Kodak", "Hewlett Packard")
 
+#: Apple. Both identifiers are UUIDs the phone assigns, and neither appears in
+#: standard EXIF. `ContentIdentifier` is the more interesting of the two: the
+#: still and the short film of a Live Photo carry the same one, so it is what
+#: says two files are one exposure.
+_APPLE = {
+    0x0020: ("ImageUniqueID", "text"),
+    0x002B: ("ContentIdentifier", "text"),
+}
+
+#: A signature, where the directory begins after it, whose space its offsets
+#: are counted in, and the fields worth naming. Every row is confirmed against
+#: a photograph from a camera that writes it.
+_SIGNATURES: tuple[tuple[bytes, int, str, dict[int, tuple[str, str]]], ...] = (
+    (b"Apple iOS\x00", 14, NOTE_RELATIVE, _APPLE),
+    (b"OLYMPUS\x00II", 12, NOTE_RELATIVE, {}),
+    (b"OLYMP\x00", 8, TIFF_RELATIVE, {}),
+    (b"Panasonic\x00", 12, TIFF_RELATIVE, {}),
+    (b"Nikon\x00\x01", 8, TIFF_RELATIVE, {}),
+)
+
 #: What the note's byte order says. A camera writes the note in the same order
 #: as the file around it, so a disagreement means the file was rewritten by
 #: something that copied the block through without re-encoding it.
@@ -111,6 +131,9 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         return _fujifilm(note)
 
     vendor = _vendor(make)
+    for signature, skip, scheme, table in _SIGNATURES:
+        if note.startswith(signature):
+            return _signed(vendor, note, data, at, size, skip, scheme, table, endian)
     if note.startswith(b"\xff\xd8\xff"):
         # Not a directory at all. A few compacts write a whole JPEG here, and
         # it is usually several times the size of the EXIF thumbnail.
@@ -136,6 +159,33 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
     )
     table = _CANON if vendor == "Canon" else {}
     return _notes(vendor, TIFF_RELATIVE, entries, size, table, note_endian, byte_order)
+
+
+def _signed(
+    vendor: str,
+    note: bytes,
+    data: Raw,
+    at: int,
+    size: int,
+    skip: int,
+    scheme: str,
+    table: dict[int, tuple[str, str]],
+    endian: str,
+) -> MakerNotes:
+    """Read a note whose signature says where its directory is.
+
+    A note-relative layout carries its own byte-order mark in the two bytes
+    before the directory, because the vendor does not promise to match the file
+    around it. A TIFF-relative one has no mark and no choice: its offsets only
+    mean anything in the container's order.
+    """
+    if scheme == NOTE_RELATIVE:
+        mark = note[skip - 2 : skip]
+        inner = "<" if mark == b"II" else ">" if mark == b"MM" else endian
+        entries = _entries(note, skip, inner, base=0, limit=len(note))
+        return _notes(vendor, scheme, entries, size, table, inner)
+    entries = _entries(data, at + skip, endian, base=0, limit=len(data))
+    return _notes(vendor, scheme, entries, size, table, endian)
 
 
 def _nikon(note: bytes) -> MakerNotes | None:
