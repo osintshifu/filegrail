@@ -11,6 +11,12 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import pytest
+
+from filegrail.photopixels import available
+
+from .photo import jpeg_with_exif
+
 
 def photograph(path: Path, taken: str = "2024:01:02 03:04:05") -> None:
     """A real JPEG carrying real EXIF, big enough that diagnostics cost bytes.
@@ -28,6 +34,7 @@ def photograph(path: Path, taken: str = "2024:01:02 03:04:05") -> None:
     Image.new("RGB", (900, 700), (90, 120, 60)).save(path, quality=90, exif=tags)
 
 
+@pytest.mark.skipif(not available(), reason="photo extra is not installed")
 def test_a_photo_report_stops_producing_images_once_its_budget_is_spent(tmp_path: Path):
     """A report nobody can open is not a report.
 
@@ -62,12 +69,12 @@ def test_a_photo_report_stops_producing_images_once_its_budget_is_spent(tmp_path
     )
 
 
-def archive_of_photographs(path: Path, count: int) -> None:
-    """A zip whose members are readable photographs, so reading them costs."""
+def archive_of_members(path: Path, count: int) -> None:
+    """A zip whose members carry evidence, so opening it is work worth bounding."""
     with zipfile.ZipFile(path, "w") as package:
         for index in range(count):
             member = path.parent / f"{path.stem}-{index}.jpg"
-            photograph(member)
+            jpeg_with_exif(member, "Canon", "Canon EOS 40D", "2024:01:02 03:04:05")
             package.write(member, f"inside/{index}.jpg")
             member.unlink()
 
@@ -85,7 +92,7 @@ def test_a_scan_stops_opening_carriers_once_its_budget_is_spent(tmp_path: Path):
     case = tmp_path / "case"
     case.mkdir()
     for name in ("one.zip", "two.zip", "three.zip"):
-        archive_of_photographs(case / name, 2)
+        archive_of_members(case / name, 2)
 
     coverage = ScanCoverage()
     records = scan(

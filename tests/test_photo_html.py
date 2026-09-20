@@ -4,6 +4,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from filegrail.models import EvidenceRecord
 from filegrail.photo import (
     MethodCoverage,
@@ -20,6 +22,7 @@ from filegrail.photojpeg import (
     QualityEstimate,
     QuantizationTable,
 )
+from filegrail.photopixels import available as pixels_available
 
 NOW = datetime(2026, 9, 20, 12, 30, tzinfo=timezone.utc)
 
@@ -188,6 +191,7 @@ def photograph(path: Path) -> None:
     Image.new("RGB", (800, 600), (70, 110, 90)).save(path, quality=90, exif=tags)
 
 
+@pytest.mark.skipif(not pixels_available(), reason="photo extra is not installed")
 def test_a_linked_report_points_at_the_photographs_and_keeps_its_maps_beside_it(tmp_path: Path):
     """The everyday report: a page a browser opens, beside the files it shows.
 

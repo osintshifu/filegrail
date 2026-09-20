@@ -11,6 +11,9 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
+import pytest
+
+from filegrail.photopixels import available
 from filegrail.sources.embedded.exif import read_exif
 
 from .photo import ifd, jpeg_with_maker_note
@@ -208,6 +211,7 @@ def test_the_photo_report_names_the_block_and_the_body_it_identifies(tmp_path: P
     assert "3105364" in page
 
 
+@pytest.mark.skipif(not available(), reason="photo extra is not installed")
 def test_a_note_that_is_itself_an_image_is_read_as_a_preview(tmp_path: Path):
     """Some cameras put a whole JPEG where a directory is supposed to go.
 
@@ -236,6 +240,7 @@ def test_a_note_that_is_itself_an_image_is_read_as_a_preview(tmp_path: Path):
     assert preview.data.startswith(b"\xff\xd8") and preview.data.endswith(b"\xff\xd9")
 
 
+@pytest.mark.skipif(not available(), reason="photo extra is not installed")
 def test_the_photo_report_shows_a_preview_the_maker_note_carries(tmp_path: Path):
     """Two previews in one file are two pieces of evidence, not a duplicate.
 
