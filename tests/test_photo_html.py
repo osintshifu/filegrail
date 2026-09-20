@@ -134,7 +134,8 @@ def _collection(*, redacted: bool = False) -> PhotoCollection:
 
 
 def test_renders_offline_photo_plate_artifacts_and_evidence_states():
-    page = render_photo_html(_collection(), output=Path("reports/photos.html"), now=NOW)
+    destination = Path("reports") / "photos.html"
+    page = render_photo_html(_collection(), output=destination, now=NOW)
 
     assert page.startswith("<!doctype html>")
     assert "default-src 'none'" in page
@@ -152,7 +153,9 @@ def test_renders_offline_photo_plate_artifacts_and_evidence_states():
     assert "0x00000000" in page
     assert "DQT 0 / 8-bit" in page
     assert "camera note" in page
-    assert "reports/photos.html" in page
+    # Built from `Path`, never from a literal: the report prints the platform's
+    # own separator and a literal with a slash in it passes everywhere but Windows.
+    assert str(destination) in page
     assert "2026-09-20 12:30 UTC" in page
 
     outward = r"""\b(?:src|href|action)\s*=\s*["'](?!#|data:image/)"""
