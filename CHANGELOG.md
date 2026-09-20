@@ -9,22 +9,27 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `filegrail photo PATH --out REPORT.html` builds a dedicated, self-contained photo-forensics report with a collection contact sheet, one evidence plate per image, explicit method coverage and separate fact, conflict and signal states.
+- `filegrail photo PATH --out REPORT.html` builds a report about photographs: a collection contact sheet, one evidence plate per image, explicit method coverage and separate fact, conflict and signal states. The page shows each photograph from where it lies on disk and writes its diagnostic maps to a directory beside itself; `--embed` carries every image inside the page instead, as one portable file. `--image-budget` bounds how much image material one report may produce, and photographs past that allowance keep every fact read from them and say what they lost.
 - The zero-dependency photo core walks JPEG markers through EOI, reports encoding, dimensions, component sampling, quantization and Huffman tables, restart intervals, scans, comments and trailing bytes, and distinguishes exact IJG quantization matches from nearest-quality estimates.
-- EXIF parsing now follows IFD1, Interoperability and SubIFD directories with bounds and cycle detection. Valid embedded JPEG thumbnails are described by dimensions, size and SHA-256 and can be shown in the photo report without entering scan JSON.
-- Camera maker notes are read as an evidence block of their own. Canon and Nikon blocks name the camera body serial number, the shutter count, the owner name typed into the camera, the firmware version, the frame number and the lens identity; another vendor's block is identified and its entries counted rather than guessed at. Because most cameras leave the standard EXIF serial tag empty and write the serial here instead, photographs now cluster by the body that took them.
-- Apple, Olympus, Panasonic and first-generation Nikon maker notes are located by their signatures instead of being reported as unreadable, and an Apple block names the image identifier and the content identifier that a Live Photo's still and film share.
-- A maker note that carries a picture instead of a directory is read as a preview. A Samsung compact writes a 320x240 JPEG there while its standard EXIF thumbnail is 75x56, and the photo report now shows both, compares the larger of the two against the photograph and describes it by dimensions, byte count and SHA-256 in ordinary scan evidence.
-- A maker note written in the opposite byte order to the file around it is reported as such, and values it addresses by offset are dropped rather than read from wherever the rewrite left them.
+- EXIF parsing now follows IFD1, Interoperability and SubIFD directories with bounds and cycle detection. Valid embedded JPEG thumbnails are described by dimensions, size and SHA-256 and can be shown without entering scan JSON.
+- Camera maker notes are read as an evidence block of their own, and name what standard EXIF leaves blank: the body serial number, the lens serial number and model, the shutter count, the owner name typed into the camera, the firmware version and the frame number. Because most cameras leave the standard serial tag empty and write the serial here instead, photographs now cluster by the body that took them.
+- Maker notes are located by vendor signature for Apple, Olympus, Panasonic and first-generation Nikon; read out of the sub-directory Olympus keeps its serial numbers in; and read out of the fixed structure a trail camera writes instead of a directory, which is the only thing in such a file that says what took the picture and which numbers the event and the frame within it. An Apple block names the image identifier and the content identifier that a Live Photo's still and film share.
+- A maker note that carries a picture instead of a directory is read as a preview and described by dimensions, byte count and SHA-256. One that only points at a preview is reported as well, including when the file no longer contains what it points at.
+- A note written in the opposite byte order to the file around it is reported as such, and the values it addresses by offset are dropped rather than read from wherever the rewrite left them. A record says how many entries a block declared and, where one produced no field, whether this reader could not read it or would not trust an offset into a block that was moved.
+- Photographs group by lens as well as by body. A lens serial identifies one physical lens, and a lens moves between bodies, so it is a separate axis and a separate node in the graph: two files through one lens are never reported as two files from one camera.
+- A scan has an allowance for the content it reads out of carriers, and names every carrier it left closed once that allowance is gone.
 - The optional `filegrail[photo]` extra adds bounded Pillow/NumPy diagnostics: report preview, RGB and luminance histogram, luminance gradient, selected bit planes, median residual, ELA at qualities 90 and 75, and embedded-thumbnail comparison.
+
+### Fixed
+
+- Finding the end of a JPEG entropy-coded scan reads the file in blocks rather than one byte at a time. That walk covers nearly every byte of a photograph and dominated the cost of analysing one.
+- A maker note value that does not decode as text no longer becomes a field. Decoding with replacement yields printable replacement characters, which used to reach a report as a lens name.
+- A field padded with null bytes at the front, which is where one vendor puts the padding, is read instead of coming back empty.
+- Entries written in a signed or floating field type are counted instead of being lost without a word.
 
 ### Security
 
-- Photo reports remain offline under an explicit CSP. `--redact` omits every pixel-bearing preview and diagnostic, and individual decoder or diagnostic failures do not abort analysis of the remaining evidence.
-
-### Changed
-
-- The start screen and documentation expose the dedicated photo workflow and its limits. Photo analysis never emits an authenticity score or treats a diagnostic signal as proof of manipulation.
+- Photo reports make no network request, under an explicit content security policy in either form. `--redact` omits every pixel-bearing preview and diagnostic, and individual decoder or diagnostic failures do not abort analysis of the remaining evidence.
 
 ## 0.40.4 - 2026-09-19
 
