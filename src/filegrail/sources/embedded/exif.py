@@ -18,6 +18,7 @@ import mmap
 import struct
 from pathlib import Path
 
+from ...preview import EmbeddedPreview, jpeg_dimensions
 from . import jpeg
 
 #: What the parser reads from: a block lifted out of a container, or a whole
@@ -40,8 +41,14 @@ ARTIST = 0x013B
 COPYRIGHT = 0x8298
 EXIF_IFD = 0x8769
 GPS_IFD = 0x8825
+SUB_IFDS = 0x014A
+INTEROP_IFD = 0xA005
 DATETIME_ORIGINAL = 0x9003
 LENS_MODEL = 0xA434
+
+THUMBNAIL_COMPRESSION = 0x0103
+THUMBNAIL_OFFSET = 0x0201
+THUMBNAIL_LENGTH = 0x0202
 
 GPS_LATITUDE_REF = 0x0001
 GPS_LATITUDE = 0x0002
@@ -115,15 +122,21 @@ _SRATIONAL = 10
 
 _MAX_ENTRIES = 512
 _MAX_STRING = 1024
+_MAX_IFDS = 64
+_MAX_PREVIEW_BYTES = 4 * 1024 * 1024
 _HEIF_SCAN_BYTES = 4 * 1024 * 1024
 
 
 class Exif(dict[int, object]):
-    """Decoded tags, keyed by tag number, with the GPS block kept separate."""
+    """Decoded tags and subordinate TIFF directories."""
 
     def __init__(self) -> None:
         super().__init__()
         self.gps: dict[int, object] = {}
+        self.interop: dict[int, object] = {}
+        self.thumbnail: dict[int, object] = {}
+        self.sub_ifds: list[dict[int, object]] = []
+        self.preview: EmbeddedPreview | None = None
 
 
 def read_exif(path: Path) -> Exif | None:
@@ -245,35 +258,87 @@ def _parse_tiff(data: Raw) -> Exif | None:
 
     (first_ifd,) = struct.unpack_from(endian + "I", data, 4)
     exif = Exif()
-    _read_ifd(data, first_ifd, endian, exif, exif)
+    seen: set[int] = set()
+    next_ifd = _read_ifd(data, first_ifd, endian, exif, exif, seen)
 
     for pointer, target in ((EXIF_IFD, exif), (GPS_IFD, exif.gps)):
         offset = exif.pop(pointer, None)
         if isinstance(offset, int):
-            _read_ifd(data, offset, endian, target, exif)
+            _read_ifd(data, offset, endian, target, exif, seen)
 
-    return exif if (exif or exif.gps) else None
+    interop = exif.pop(INTEROP_IFD, None)
+    if isinstance(interop, int):
+        _read_ifd(data, interop, endian, exif.interop, exif, seen)
 
-
-def _read_ifd(data: Raw, offset: int, endian: str, into: dict[int, object], exif: Exif) -> None:
-    if offset <= 0 or offset + 2 > len(data):
-        return
-    (count,) = struct.unpack_from(endian + "H", data, offset)
-
-    for index in range(min(count, _MAX_ENTRIES)):
-        entry = offset + 2 + index * 12
-        if entry + 12 > len(data):
-            return
-        tag, kind, length = struct.unpack_from(endian + "HHI", data, entry)
-
-        if tag in (EXIF_IFD, GPS_IFD):
-            (value,) = struct.unpack_from(endian + "I", data, entry + 8)
-            exif[tag] = value
+    sub_ifds = exif.pop(SUB_IFDS, None)
+    offsets = sub_ifds if isinstance(sub_ifds, list) else [sub_ifds]
+    for offset in offsets[:_MAX_IFDS]:
+        if not isinstance(offset, int):
             continue
+        directory: dict[int, object] = {}
+        _read_ifd(data, offset, endian, directory, exif, seen)
+        if directory:
+            exif.sub_ifds.append(directory)
+
+    if isinstance(next_ifd, int) and next_ifd > 0:
+        _read_ifd(data, next_ifd, endian, exif.thumbnail, exif, seen)
+        exif.preview = _thumbnail_preview(data, exif.thumbnail)
+
+    return exif if (exif or exif.gps or exif.thumbnail or exif.interop or exif.sub_ifds) else None
+
+
+def _read_ifd(
+    data: Raw,
+    offset: int,
+    endian: str,
+    into: dict[int, object],
+    exif: Exif,
+    seen: set[int],
+) -> int | None:
+    if offset <= 0 or offset in seen or len(seen) >= _MAX_IFDS or offset + 2 > len(data):
+        return None
+    seen.add(offset)
+    (count,) = struct.unpack_from(endian + "H", data, offset)
+    if count > _MAX_ENTRIES:
+        return None
+    end = offset + 2 + count * 12
+    if end + 4 > len(data):
+        return None
+
+    for index in range(count):
+        entry = offset + 2 + index * 12
+        tag, kind, length = struct.unpack_from(endian + "HHI", data, entry)
 
         value = _read_value(data, entry, endian, kind, length)
         if value is not None:
             into[tag] = value
+            if tag in (EXIF_IFD, GPS_IFD, SUB_IFDS, INTEROP_IFD):
+                exif[tag] = value
+    (next_ifd,) = struct.unpack_from(endian + "I", data, end)
+    return next_ifd or None
+
+
+def _thumbnail_preview(data: Raw, thumbnail: dict[int, object]) -> EmbeddedPreview | None:
+    if thumbnail.get(THUMBNAIL_COMPRESSION) != 6:
+        return None
+    offset = thumbnail.get(THUMBNAIL_OFFSET)
+    length = thumbnail.get(THUMBNAIL_LENGTH)
+    if (
+        not isinstance(offset, int)
+        or not isinstance(length, int)
+        or isinstance(offset, bool)
+        or isinstance(length, bool)
+        or offset <= 0
+        or length <= 0
+        or length > _MAX_PREVIEW_BYTES
+        or offset > len(data) - length
+    ):
+        return None
+    payload = bytes(data[offset : offset + length])
+    dimensions = jpeg_dimensions(payload)
+    if dimensions is None:
+        return None
+    return EmbeddedPreview("EXIF IFD1", "image/jpeg", payload, *dimensions)
 
 
 def _read_value(data: Raw, entry: int, endian: str, kind: int, length: int) -> object | None:

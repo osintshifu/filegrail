@@ -256,10 +256,21 @@ def _from_exif(path: Path, suffix: str) -> EvidenceRecord | None:
         notes.append("ICC profile recorded")
     if jpeg_metadata and jpeg_metadata.jfxx_thumbnail:
         notes.append("JFXX thumbnail present")
+    if tags.preview:
+        notes.append("EXIF thumbnail present")
     if photoshop_metadata and photoshop_metadata.note:
         notes.append(photoshop_metadata.note)
 
     fields = _exif_fields(tags)
+    if tags.preview:
+        fields.update(
+            {
+                "Thumbnail:Format": "JPEG",
+                "Thumbnail:Dimensions": f"{tags.preview.width}x{tags.preview.height}",
+                "Thumbnail:Bytes": str(len(tags.preview.data)),
+                "Thumbnail:SHA256": tags.preview.sha256,
+            }
+        )
     if jpeg_metadata:
         fields.update(jpeg_metadata.fields)
     if photoshop_metadata:
