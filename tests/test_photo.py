@@ -2,10 +2,18 @@
 
 from pathlib import Path
 
+import pytest
+
 from filegrail.models import EvidenceRecord, FileRecord
 from filegrail.photo import analyse_photos
+from filegrail.photopixels import available as pixels_available
 from filegrail.sources.embedded import read_embedded_metadata
 from tests.test_photo_exif import _jpeg_with_ifd1, _thumbnail
+
+
+@pytest.fixture(autouse=True)
+def _disable_optional_pixels(monkeypatch):
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
 
 
 def _record(path: Path) -> FileRecord:
@@ -136,3 +144,27 @@ def test_ignores_unsupported_files_and_isolates_analyser_failure(tmp_path: Path,
     assert [item.name for item in collection.photos] == ["broken.jpg"]
     assert collection.photos[0].methods[0].status == "failed"
     assert collection.photos[0].methods[1].status == "evaluated"
+
+
+@pytest.mark.skipif(not pixels_available(), reason="photo extra is not installed")
+def test_integrates_optional_pixel_artifacts(tmp_path: Path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image
+
+    photo = tmp_path / "camera.jpg"
+    encoded = BytesIO()
+    Image.new("RGB", (8, 8), (100, 120, 140)).save(encoded, format="JPEG")
+    jpeg = encoded.getvalue()
+    thumbnail = BytesIO()
+    Image.new("RGB", (4, 4), (120, 80, 40)).save(thumbnail, format="JPEG")
+    exif_segment = _jpeg_with_ifd1(thumbnail.getvalue())[2:-2]
+    photo.write_bytes(jpeg[:2] + exif_segment + jpeg[2:])
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: True)
+
+    result = analyse_photos([_record(photo)], tmp_path).photos[0]
+
+    assert result.methods[-1].status == "evaluated"
+    assert result.methods[-1].detail == "7 derived maps produced"
+    assert "main-preview" in {item.key for item in result.artifacts}
+    assert "embedded-preview-comparison" in {item.key for item in result.artifacts}

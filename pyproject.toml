@@ -44,6 +44,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2,<9", "ruff>=0.6,<1", "mypy>=1.11,<2"]
+photo = ["Pillow>=10,<13", "numpy>=1.24,<3"]
 
 # Kept out of `dev` on purpose. `hypothesis` is the one thing in this repo whose
 # result depends on a seed rather than on the code, and the nine test jobs in

@@ -252,13 +252,43 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
                 )
             )
 
-    methods.append(
-        MethodCoverage(
-            "Pixel diagnostics",
-            "not evaluated",
-            "install the photo extra to enable bounded pixel methods",
+    if redact:
+        methods.append(
+            MethodCoverage(
+                "Pixel diagnostics",
+                "not evaluated",
+                "pixel-bearing artifacts omitted by redaction",
+            )
         )
-    )
+    else:
+        from . import photopixels
+
+        if not photopixels.available():
+            methods.append(
+                MethodCoverage(
+                    "Pixel diagnostics",
+                    "not evaluated",
+                    "install the photo extra to enable bounded pixel methods",
+                )
+            )
+        else:
+            try:
+                pixel_artifacts, pixel_facts = photopixels.analyse_pixels(
+                    path, [preview] if preview else []
+                )
+            except Exception as error:
+                methods.append(MethodCoverage("Pixel diagnostics", "failed", type(error).__name__))
+            else:
+                artifacts.extend(pixel_artifacts)
+                facts.extend(pixel_facts)
+                derived = sum(item.key != "main-preview" for item in pixel_artifacts)
+                methods.append(
+                    MethodCoverage(
+                        "Pixel diagnostics",
+                        "evaluated",
+                        f"{derived} derived maps produced",
+                    )
+                )
 
     evidence = tuple(record.redacted().evidence if redact else record.evidence)
     camera = exif.camera(tags) if tags else _evidence_value(evidence, "Make", "Model")
