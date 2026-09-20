@@ -18,14 +18,14 @@ NOT_EVALUATED = "not evaluated"
 
 PHOTO_SUFFIXES = exif.SUFFIXES | {".png", ".apng", ".bmp", ".dib", ".gif", ".jfif"}
 
-#: How many bytes of pixel-bearing material one report may carry. Every map is
+#: How many bytes of the page one report may spend on images. Every map is
 #: bounded on its own and a collection is not: two hundred photographs from a
 #: phone measured 1.5 GB of HTML and 5.5 GB of memory to build, which is not a
-#: report. The page is larger than the figure here, because the images are
-#: carried as base64 and because the allowance is checked before a photograph
-#: rather than during it, so the last one admitted passes it: measured at 47 MB
-#: for the same two hundred. Raised or lifted with `--image-budget`.
-IMAGE_BUDGET = 24 * 1024 * 1024
+#: report. Counted as the page carries them rather than as they are produced,
+#: because the number a person wants is the size of the file they end up with.
+#: The page still passes it a little, by the last photograph admitted and by
+#: the markup around the images. Raised or lifted with `--image-budget`.
+IMAGE_BUDGET = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +72,8 @@ class _Budget:
         return self.limit is not None and self.used >= self.limit
 
     def take(self, artifacts: list[PhotoArtifact]) -> None:
-        self.used += sum(len(artifact.data) for artifact in artifacts)
+        # Base64 is what the page holds, and it is four bytes for every three.
+        self.used += sum(len(artifact.data) for artifact in artifacts) * 4 // 3
 
 
 @dataclass(frozen=True, slots=True)
