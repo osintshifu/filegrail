@@ -306,3 +306,34 @@ def test_apple_notes_name_the_identifiers_that_tie_files_together(tmp_path: Path
     assert tags.maker.entries == 2
     assert tags.maker.fields["ImageUniqueID"] == unique
     assert tags.maker.fields["ContentIdentifier"] == content
+
+
+def panasonic_note(serial: bytes, note_at: int) -> bytes:
+    """A `Panasonic` note: a twelve-byte signature, then a bare directory.
+
+    Its offsets are counted in the container's TIFF space, so the note has to
+    know where it will be placed before it can address anything.
+    """
+    entries = [(0x0025, 7, serial)]
+    directory, values = ifd(entries, "<", value_base=note_at + 12 + 2 + len(entries) * 12 + 4)
+    return b"Panasonic\x00\x00\x00" + directory + values
+
+
+def test_a_value_the_camera_pads_with_nulls_is_still_read():
+    """Panasonic writes its serial into a field two bytes wider than the text.
+
+    The padding sits in front of the value rather than after it, so a reader
+    that stops at the first null byte reads nothing at all and the body goes
+    unnamed. The bytes are what the camera wrote; only the reading was wrong.
+    """
+    from filegrail.sources.embedded import makernotes
+
+    note_at = 8
+    note = panasonic_note(b"\x00\x00S010604030293\x00", note_at)
+    tiff = b"II\x2a\x00" + struct.pack("<I", 8) + note
+
+    notes = makernotes.read(tiff, note_at, len(note), "<", "Panasonic")
+
+    assert notes is not None
+    assert notes.vendor == "Panasonic"
+    assert notes.fields["InternalSerialNumber"] == "S010604030293"

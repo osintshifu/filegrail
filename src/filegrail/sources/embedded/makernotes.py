@@ -72,6 +72,13 @@ _APPLE = {
     0x002B: ("ContentIdentifier", "text"),
 }
 
+#: Panasonic. The serial is stamped by the factory and encodes the body's build
+#: date, which is why it is longer than a counter. The field it sits in is wider
+#: than the text and the camera pads the front of it rather than the end.
+_PANASONIC = {
+    0x0025: ("InternalSerialNumber", "text"),
+}
+
 #: A signature, where the directory begins after it, whose space its offsets
 #: are counted in, and the fields worth naming. Every row is confirmed against
 #: a photograph from a camera that writes it.
@@ -79,7 +86,7 @@ _SIGNATURES: tuple[tuple[bytes, int, str, dict[int, tuple[str, str]]], ...] = (
     (b"Apple iOS\x00", 14, NOTE_RELATIVE, _APPLE),
     (b"OLYMPUS\x00II", 12, NOTE_RELATIVE, {}),
     (b"OLYMP\x00", 8, TIFF_RELATIVE, {}),
-    (b"Panasonic\x00", 12, TIFF_RELATIVE, {}),
+    (b"Panasonic\x00", 12, TIFF_RELATIVE, _PANASONIC),
     (b"Nikon\x00\x01", 8, TIFF_RELATIVE, {}),
 )
 
@@ -329,7 +336,13 @@ def _entries(
 
 
 def _text(raw: bytes) -> str | None:
-    value = raw.split(b"\x00")[0].decode("utf-8", "replace").strip()
+    """The text in a field, whichever end the vendor padded.
+
+    A field is declared wider than the string it holds and the padding is
+    conventionally at the end. Panasonic puts it at the front, so stopping at
+    the first null byte returns nothing for the one field that names the body.
+    """
+    value = raw.strip(b"\x00").split(b"\x00")[0].decode("utf-8", "replace").strip()
     return value if value and value.isprintable() else None
 
 
