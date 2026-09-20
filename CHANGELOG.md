@@ -5,6 +5,23 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.41.0 - 2026-09-20
+
+### Added
+
+- `filegrail photo PATH --out REPORT.html` builds a dedicated, self-contained photo-forensics report with a collection contact sheet, one evidence plate per image, explicit method coverage and separate fact, conflict and signal states.
+- The zero-dependency photo core walks JPEG markers through EOI, reports encoding, dimensions, component sampling, quantization and Huffman tables, restart intervals, scans, comments and trailing bytes, and distinguishes exact IJG quantization matches from nearest-quality estimates.
+- EXIF parsing now follows IFD1, Interoperability and SubIFD directories with bounds and cycle detection. Valid embedded JPEG thumbnails are described by dimensions, size and SHA-256 and can be shown in the photo report without entering scan JSON.
+- The optional `filegrail[photo]` extra adds bounded Pillow/NumPy diagnostics: report preview, RGB and luminance histogram, luminance gradient, selected bit planes, median residual, ELA at qualities 90 and 75, and embedded-thumbnail comparison.
+
+### Security
+
+- Photo reports remain offline under an explicit CSP. `--redact` omits every pixel-bearing preview and diagnostic, and individual decoder or diagnostic failures do not abort analysis of the remaining evidence.
+
+### Changed
+
+- The start screen and documentation expose the dedicated photo workflow and its limits. Photo analysis never emits an authenticity score or treats a diagnostic signal as proof of manipulation.
+
 ## 0.40.4 - 2026-09-19
 
 ### Security

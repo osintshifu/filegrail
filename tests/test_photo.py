@@ -123,10 +123,12 @@ def test_redaction_omits_pixel_bearing_artifacts(tmp_path: Path):
     photo = tmp_path / "camera.jpg"
     photo.write_bytes(_photo_bytes())
 
-    result = analyse_photos([_record(photo)], tmp_path, redact=True).photos[0]
+    collection = analyse_photos([_record(photo)], tmp_path, redact=True)
+    result = collection.photos[0]
 
     assert result.artifacts == ()
     assert any(fact.label == "Embedded preview" for fact in result.facts)
+    assert collection.summary[2] == ("embedded previews", "1")
 
 
 def test_ignores_unsupported_files_and_isolates_analyser_failure(tmp_path: Path, monkeypatch):

@@ -15,6 +15,7 @@ from pathlib import Path
 from . import __version__
 from .models import EvidenceRecord
 from .photo import PhotoArtifact, PhotoCollection, PhotoFact, PhotoResult
+from .photojpeg import JpegAnalysis
 
 POLICY = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
@@ -90,6 +91,13 @@ display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.38fr);gap:18px;al
 .diagnostic img{display:block;max-width:100%;max-height:620px;object-fit:contain;background:var(--sleeve);
 padding:12px}.method-note{font-size:.8rem}.method-note dt{color:var(--muted)}.method-note dd{margin:0 0 9px;
 overflow-wrap:anywhere}.report-notes{font-size:.84rem;color:var(--muted);max-width:75rem}
+.structure-body{padding:0 0 18px;display:grid;gap:18px}.table-wrap{max-width:100%;overflow:auto}
+.structure table{width:100%;border-collapse:collapse;font-size:.76rem}.structure th,.structure td{
+text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}.structure th{color:var(--muted)}
+.structure h4{margin:0 0 6px;font:700 .78rem var(--sans);text-transform:uppercase;letter-spacing:.08em}
+.matrix{margin:0;overflow:auto;padding:10px;background:var(--sleeve);color:#DCE7E9;font:11px/1.45 var(--mono)}
+.structure-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.structure-facts div{border-left:3px solid var(--cyan);padding:7px 9px;background:#F0F4F5;font-size:.78rem}
 @media(max-width:1000px){.case-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
 .summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.plate-body{grid-template-columns:1fr}
 .image-stage{border-right:0;border-bottom:1px solid var(--line)}}
@@ -293,9 +301,9 @@ def _diagnostics(photo: PhotoResult) -> str:
         for artifact in photo.artifacts
         if artifact.key not in {"main-preview", "embedded-preview"}
     ]
-    if not artifacts:
+    if not artifacts and photo.jpeg is None:
         return ""
-    items = []
+    items = [_jpeg_structure(photo.jpeg)] if photo.jpeg is not None else []
     for artifact in artifacts:
         dimensions = (
             f"{artifact.width} x {artifact.height} px"
@@ -319,6 +327,83 @@ def _diagnostics(photo: PhotoResult) -> str:
         '<section class="diagnostics" aria-label="Derived diagnostics">'
         + "".join(items)
         + "</section>"
+    )
+
+
+def _jpeg_structure(jpeg: JpegAnalysis) -> str:
+    marker_rows = "".join(
+        f"<tr><td>{index}</td><td>{_e(marker.name)}</td>"
+        f'<td class="mono">0x{marker.offset:08X}</td><td>{marker.length}</td></tr>'
+        for index, marker in enumerate(jpeg.markers, 1)
+    )
+    components = "".join(
+        f"<tr><td>{identifier}</td><td>{horizontal} x {vertical}</td><td>{table}</td></tr>"
+        for identifier, horizontal, vertical, table in jpeg.components
+    )
+    tables = []
+    for table in jpeg.quantization:
+        rows = [
+            " ".join(f"{value:3d}" for value in table.values[index : index + 8])
+            for index in range(0, len(table.values), 8)
+        ]
+        tables.append(
+            f"<div><h4>DQT {table.identifier} / {table.precision}-bit</h4>"
+            f'<pre class="matrix">{_e(chr(10).join(rows))}</pre></div>'
+        )
+    huffman = (
+        ", ".join(
+            f"{table.table_class} {table.identifier}: {table.symbols} symbols"
+            for table in jpeg.huffman
+        )
+        or "none recorded"
+    )
+    comments = " | ".join(jpeg.comments) or "none recorded"
+    quality = "not estimated"
+    if jpeg.quality:
+        basis = "exact IJG match" if jpeg.quality.exact else "nearest IJG estimate"
+        quality = f"{jpeg.quality.quality} / {basis} / distance {jpeg.quality.distance}"
+    frame = (
+        " / ".join(
+            part
+            for part in (
+                jpeg.encoding,
+                f"{jpeg.precision}-bit" if jpeg.precision is not None else None,
+                f"{jpeg.width} x {jpeg.height} px" if jpeg.width and jpeg.height else None,
+            )
+            if part
+        )
+        or "frame not decoded"
+    )
+    structural_facts = (
+        ("frame", frame),
+        ("scans", str(jpeg.scans)),
+        ("restart interval", str(jpeg.restart_interval or "not recorded")),
+        ("EOI", f"0x{jpeg.eoi_offset:08X}" if jpeg.eoi_offset is not None else "not found"),
+        ("trailing bytes", str(jpeg.trailing_bytes)),
+        ("quality tables", quality),
+        ("Huffman tables", huffman),
+        ("comments", comments),
+    )
+    fact_html = "".join(
+        f"<div><strong>{_e(label)}</strong><br>{_e(value)}</div>"
+        for label, value in structural_facts
+    )
+    component_table = (
+        '<div class="table-wrap"><h4>Frame components</h4><table><thead><tr>'
+        "<th>ID</th><th>sampling</th><th>DQT</th></tr></thead>"
+        f"<tbody>{components}</tbody></table></div>"
+        if components
+        else ""
+    )
+    return (
+        '<details class="diagnostic structure"><summary>JPEG marker stream'
+        '<small>offsets, frame and coding tables</small></summary><div class="structure-body">'
+        f'<div class="structure-facts">{fact_html}</div>'
+        '<div class="table-wrap"><h4>Markers</h4><table><thead><tr>'
+        "<th>#</th><th>marker</th><th>offset</th><th>bytes</th></tr></thead>"
+        f"<tbody>{marker_rows}</tbody></table></div>{component_table}"
+        + "".join(tables)
+        + "</div></details>"
     )
 
 

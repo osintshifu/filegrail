@@ -29,7 +29,7 @@ on when you want the PDFs rather than everything a file said about itself.
 
 | Block | Extensions | What comes out |
 |:---|:---|:---|
-| `exif` | `.jpg` `.jpeg` `.jpe` `.tif` `.tiff` `.dng` `.nef` `.cr2` `.arw` `.orf` `.rw2` `.webp` `.heic` `.heif` `.avif` | Camera, lens, software, capture time and GPS; JPEG JFIF/JFXX and ICC profile metadata |
+| `exif` | `.jpg` `.jpeg` `.jpe` `.tif` `.tiff` `.dng` `.nef` `.cr2` `.arw` `.orf` `.rw2` `.webp` `.heic` `.heif` `.avif` | Camera, lens, software, capture time and GPS; IFD1 embedded-JPEG thumbnail descriptors; JPEG JFIF/JFXX and ICC profile metadata |
 | `photoshop-irb` | `.jpg` `.jpeg` `.jpe` `.tif` `.tiff` `.psd` `.psb` | Resolution, JPEG settings, embedded-thumbnail descriptors, paths, workflow URLs and version information |
 | `png-text` | `.png` `.apng` | `tEXt` / `zTXt` / `iTXt` keywords: software, creation time, author, and whatever a generator wrote there; the EXIF tags of an `eXIf` chunk |
 | `isobmff` | `.mp4` `.m4v` `.mov` `.qt` `.3gp` `.m4a` `.heic` `.heif` `.avif` | Encoder and recording device, creation time, ISO 6709 location, from the `udta` atoms and from `moov/meta` `mdta` keys such as `com.apple.quicktime.model`, with every other `mdta` key kept under its own name; each track's handler, sample format and `mdhd` language, and a `tmcd` track noted; GoPro `FIRM`, `LENS`, `CAME` and `MUID` atoms; a `gpmd` (GPMF) or `camm` track located through the sample tables and summarised: device, stream names, GPS point count, first and last fix, GPS clock start and end |
@@ -65,6 +65,18 @@ somebody had the document open.
 
 So decoded fields stay visible by default. `--brief` folds them down, `--json`
 keeps all of them, and long values wrap instead of being cut.
+
+## Photo-forensics analysis
+
+`filegrail photo PATH --out REPORT.html` is a separate still-image workflow. It reuses the provenance and metadata scan, then adds structural facts and, when installed, optional bounded pixel diagnostics.
+
+The native JPEG pass reads the marker stream through EOI, including SOF encoding and dimensions, component sampling, DQT and DHT summaries, DRI, SOS count, comments, restart markers and bytes after EOI. Quantization quality is labelled as either an exact IJG table match or the nearest heuristic estimate. It describes the current encoding tables, not the first save of the image.
+
+The EXIF pass walks IFD0, EXIF, GPS, Interoperability, SubIFDs and IFD1 with bounds and cycle detection. A valid IFD1 JPEG thumbnail is retained only for the dedicated report and described in ordinary scan evidence by format, dimensions, byte count and SHA-256. The binary thumbnail never enters scan JSON.
+
+The command selects JPEG, TIFF and supported camera-raw EXIF containers, WebP, HEIC, HEIF, AVIF, PNG, APNG, BMP, DIB and GIF. Structural coverage varies by container. JPEG marker analysis applies only to JPEG; EXIF directory analysis applies only where the native EXIF reader supports the container. Pixel decoding depends on Pillow's codec support on the installed system.
+
+Installing `filegrail[photo]` adds Pillow and NumPy for a bounded main preview, RGB and luminance histogram, luminance gradient, selected bit planes, median noise residual, ELA at two declared qualities and embedded-thumbnail comparison. Without the extra, the report explicitly says those methods were not evaluated. No result is converted into an authenticity or manipulation score.
 
 ---
 

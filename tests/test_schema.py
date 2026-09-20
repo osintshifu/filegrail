@@ -24,6 +24,11 @@ from filegrail.cli import PARSERS, main
 #: refuses to run without a terminal, so it has no document to stamp.
 INTERACTIVE = {"menu"}
 
+#: `photo` writes one HTML report and takes no `--json` at all. There is no
+#: machine-readable document here to stamp, and inventing one would be a second
+#: schema to keep for a reader nobody has asked for.
+HTML_ONLY = {"photo"}
+
 
 @pytest.fixture(autouse=True)
 def elsewhere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -122,9 +127,9 @@ def test_stamping_left_the_documents_otherwise_alone(case: Path, capsys):
 
 
 def test_every_command_that_can_emit_json_is_covered_here():
-    """A sixth command must be stamped too, and this is what says so."""
-    assert set(DOCUMENTS) | INTERACTIVE == set(PARSERS), sorted(
-        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE
+    """A new command must be stamped too, or say here why it has nothing to stamp."""
+    assert set(DOCUMENTS) | INTERACTIVE | HTML_ONLY == set(PARSERS), sorted(
+        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE - HTML_ONLY
     )
 
 

@@ -86,6 +86,93 @@ def test_help_lists_a_command(capsys):
     assert "filegrail explain" in capsys.readouterr().out
 
 
+def test_photo_help_exposes_the_dedicated_html_workflow(capsys):
+    assert main(["help", "photo"]) == 0
+
+    output = capsys.readouterr().out
+    assert "filegrail photo" in output
+    assert "--out FILE" in output
+    assert "--redact" in output
+
+
+def test_photo_writes_a_self_contained_report_atomically(tmp_path: Path, capsys, monkeypatch):
+    from tests.photo import jpeg_with_exif
+
+    photo = tmp_path / "camera.jpg"
+    report = tmp_path / "photo-report.html"
+    jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+
+    assert main(["photo", str(photo), "--out", str(report), "--hash"]) == 0
+
+    assert capsys.readouterr().out == ""
+    page = report.read_text(encoding="utf-8")
+    assert page.startswith("<!doctype html>")
+    assert "camera.jpg" in page
+    assert str(report.resolve()) in page
+    assert "not calculated" not in page
+    assert not list(tmp_path.glob(".photo-report.html.*.tmp"))
+
+
+def test_photo_directory_honours_recursion(tmp_path: Path, capsys, monkeypatch):
+    from tests.photo import jpeg_with_exif
+
+    root = tmp_path / "case"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    jpeg_with_exif(root / "one.jpg", "NIKON", "D750", "2026:09:20 10:30:00")
+    jpeg_with_exif(nested / "two.jpg", "NIKON", "D750", "2026:09:20 10:31:00")
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+
+    recursive = tmp_path / "recursive.html"
+    shallow = tmp_path / "shallow.html"
+    assert main(["photo", str(root), "--out", str(recursive)]) == 0
+    assert main(["photo", str(root), "--out", str(shallow), "--no-recurse"]) == 0
+
+    capsys.readouterr()
+    assert recursive.read_text(encoding="utf-8").count('class="plate"') == 2
+    assert shallow.read_text(encoding="utf-8").count('class="plate"') == 1
+
+
+def test_photo_refuses_no_images_and_an_unsupported_single_file(tmp_path: Path, capsys):
+    text = tmp_path / "notes.txt"
+    text.write_text("nothing photographic", encoding="utf-8")
+
+    assert main(["photo", str(tmp_path), "--out", str(tmp_path / "none.html")]) == 2
+    assert "no supported photographs" in capsys.readouterr().err
+    assert main(["photo", str(text), "--out", str(tmp_path / "text.html")]) == 2
+    assert "unsupported photograph" in capsys.readouterr().err
+
+
+def test_photo_requires_an_output_file(tmp_path: Path):
+    from tests.photo import jpeg_with_exif
+
+    photo = tmp_path / "camera.jpg"
+    jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
+
+    with pytest.raises(SystemExit) as stopped:
+        main(["photo", str(photo)])
+
+    assert stopped.value.code == 2
+
+
+def test_photo_redaction_omits_the_embedded_thumbnail(tmp_path: Path, capsys, monkeypatch):
+    from tests.test_photo_exif import _jpeg_with_ifd1, _thumbnail
+
+    photo = tmp_path / "camera.jpg"
+    photo.write_bytes(_jpeg_with_ifd1(_thumbnail()))
+    report = tmp_path / "redacted.html"
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+
+    assert main(["photo", str(photo), "--out", str(report), "--redact"]) == 0
+
+    capsys.readouterr()
+    page = report.read_text(encoding="utf-8")
+    assert "No pixel-bearing image is embedded in this redacted report." in page
+    assert "data:image/" not in page
+    assert "not evaluated" in page
+
+
 def test_help_refuses_an_unknown_command(capsys):
     assert main(["help", "nonsense"]) == 2
 

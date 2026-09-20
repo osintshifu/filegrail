@@ -13,6 +13,13 @@ from filegrail.photo import (
     PhotoResult,
 )
 from filegrail.photohtml import render_photo_html
+from filegrail.photojpeg import (
+    HuffmanTable,
+    JpegAnalysis,
+    JpegMarker,
+    QualityEstimate,
+    QuantizationTable,
+)
 
 NOW = datetime(2026, 9, 20, 12, 30, tzinfo=timezone.utc)
 
@@ -50,6 +57,22 @@ def _collection(*, redacted: bool = False) -> PhotoCollection:
             "JPEG recompression quality=90; absolute RGB difference; normalized per image",
         ),
     )
+    jpeg = JpegAnalysis(
+        320,
+        240,
+        "baseline DCT",
+        8,
+        ((1, 2, 2, 0),),
+        1,
+        8,
+        (JpegMarker("SOI", 0xD8, 0, 2), JpegMarker("EOI", 0xD9, 122, 2)),
+        (QuantizationTable(0, 8, tuple(range(1, 65))),),
+        (HuffmanTable("DC", 0, 12),),
+        ("camera note",),
+        122,
+        4,
+        QualityEstimate(85, False, 17),
+    )
     photo = PhotoResult(
         1,
         f"/case/{hostile}.jpg",
@@ -70,7 +93,7 @@ def _collection(*, redacted: bool = False) -> PhotoCollection:
                 fields={"UserComment": hostile, "Software": "Darktable"},
             ),
         ),
-        None,
+        jpeg,
         (
             PhotoFact("JPEG dimensions", "320 x 240 px", "fact", "JPEG SOF"),
             PhotoFact(
@@ -122,6 +145,10 @@ def test_renders_offline_photo_plate_artifacts_and_evidence_states():
     assert "data:image/png;base64," in page
     assert "data:image/jpeg;base64," in page
     assert "JPEG recompression quality=90" in page
+    assert "JPEG marker stream" in page
+    assert "0x00000000" in page
+    assert "DQT 0 / 8-bit" in page
+    assert "camera note" in page
     assert "reports/photos.html" in page
     assert "2026-09-20 12:30 UTC" in page
 

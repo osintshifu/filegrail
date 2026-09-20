@@ -95,7 +95,7 @@ class PhotoCollection:
                 "embedded previews",
                 str(
                     sum(
-                        any(item.key == "embedded-preview" for item in one.artifacts)
+                        any(fact.label == "Embedded preview" for fact in one.facts)
                         for one in self.photos
                     )
                 ),

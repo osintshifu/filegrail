@@ -13,7 +13,9 @@ be ceremony.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -43,7 +45,7 @@ if TYPE_CHECKING:  # only for the signatures; the scan brings the real thing
     from .identify import Identifier
     from .models import FileRecord
 
-COMMANDS = ("scan", "explain", "compare", "doctor", "menu", "clean", "help")
+COMMANDS = ("scan", "photo", "explain", "compare", "doctor", "menu", "clean", "help")
 
 
 # --- parsers -----------------------------------------------------------------
@@ -255,6 +257,35 @@ def _compare_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _photo_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="filegrail photo",
+        description="Build one self-contained HTML forensic report for still photographs.",
+    )
+    parser.add_argument("path", type=Path, help="Photograph or directory to examine.")
+    parser.add_argument(
+        "-o",
+        "--out",
+        required=True,
+        type=Path,
+        metavar="FILE",
+        help="Write the self-contained photo report to this HTML file.",
+    )
+    parser.add_argument(
+        "--redact",
+        action="store_true",
+        help="Redact text and omit every pixel-bearing preview and diagnostic.",
+    )
+    parser.add_argument(
+        "--no-recurse", action="store_true", help="Do not descend into subdirectories."
+    )
+    parser.add_argument(
+        "--hash", action="store_true", dest="hash_files", help="Compute SHA-256 for each image."
+    )
+    parser.add_argument("--version", action="version", version=f"filegrail {__version__}")
+    return parser
+
+
 def _doctor_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(
         prog="filegrail doctor",
@@ -325,6 +356,7 @@ def _menu_parser() -> argparse.ArgumentParser:
 
 PARSERS = {
     "scan": build_parser,
+    "photo": _photo_parser,
     "explain": _explain_parser,
     "compare": _compare_parser,
     "doctor": _doctor_parser,
@@ -357,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         return _help(rest)
     return {
         "scan": _scan,
+        "photo": _photo,
         "explain": _explain,
         "compare": _compare,
         "doctor": _doctor,
@@ -587,6 +620,36 @@ def _scan(rest: list[str]) -> int:
     return _emit(report, written)
 
 
+def _photo(rest: list[str]) -> int:
+    args = _photo_parser().parse_args(rest)
+    root = args.path.resolve()
+    if not root.exists():
+        return _missing(args.path)
+
+    from .photo import PHOTO_SUFFIXES, analyse_photos
+    from .photohtml import render_photo_html
+
+    if root.is_file() and root.suffix.lower() not in PHOTO_SUFFIXES:
+        print(f"filegrail: unsupported photograph: {args.path}", file=sys.stderr)
+        return 2
+
+    records = scan(
+        root,
+        recursive=not args.no_recurse,
+        hash_files=args.hash_files,
+        follow_archives=False,
+        suffixes=PHOTO_SUFFIXES,
+    )
+    collection = analyse_photos(records, root, redact=args.redact)
+    if not collection.photos:
+        print(f"filegrail: no supported photographs found in {args.path}", file=sys.stderr)
+        return 2
+
+    output = args.out.resolve()
+    report = render_photo_html(collection, output=output)
+    return _emit_atomic(report, output)
+
+
 def _emit(report: str, out: Path | None) -> int:
     """The report, to the file it was asked for or to standard output."""
     said = report if report.endswith("\n") else report + "\n"
@@ -603,6 +666,35 @@ def _emit(report: str, out: Path | None) -> int:
     try:
         out.write_text(said, encoding="utf-8")
     except OSError as error:
+        print(f"filegrail: cannot write {out}: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _emit_atomic(report: str, out: Path) -> int:
+    """Write a complete report beside its destination, then replace in one step."""
+    said = report if report.endswith("\n") else report + "\n"
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=out.parent,
+            prefix=f".{out.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(said)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, out)
+    except OSError as error:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
         print(f"filegrail: cannot write {out}: {error}", file=sys.stderr)
         return 2
     return 0
