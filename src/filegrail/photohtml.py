@@ -20,9 +20,12 @@ from .models import BLOCK_LABELS, EvidenceRecord
 from .photo import PhotoArtifact, PhotoCollection, PhotoFact, PhotoResult
 from .photojpeg import JpegAnalysis
 
+#: A policy delivered in a `<meta>` element ignores `frame-ancestors`, and the
+#: browser says so in the console of every report. A directive that does nothing
+#: is worth less than a console a reader can still read.
 POLICY = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "base-uri 'none'; form-action 'none'"
 )
 
 #: The same policy for a report whose images sit beside it rather than inside
@@ -30,7 +33,7 @@ POLICY = (
 #: network, which is the point the policy is there to make.
 LINKED_POLICY = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: file:; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "base-uri 'none'; form-action 'none'"
 )
 
 #: What to call a written-out image, by what it is.
