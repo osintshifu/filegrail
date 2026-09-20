@@ -37,7 +37,19 @@ _ASCII = 2
 _SHORT = 3
 _LONG = 4
 _UNDEFINED = 7
-_WIDTHS = {_BYTE: 1, _ASCII: 1, _SHORT: 2, _LONG: 4, 5: 8, 6: 1, _UNDEFINED: 1, 9: 4, 10: 8}
+_SUBDIRECTORY = 13
+_WIDTHS = {
+    _BYTE: 1,
+    _ASCII: 1,
+    _SHORT: 2,
+    _LONG: 4,
+    5: 8,
+    6: 1,
+    _UNDEFINED: 1,
+    9: 4,
+    10: 8,
+    _SUBDIRECTORY: 4,
+}
 
 #: Where the offsets inside a note are counted from, named the way the report
 #: prints it. A reader that gets this wrong still parses, which is why it is
@@ -72,6 +84,19 @@ _APPLE = {
     0x002B: ("ContentIdentifier", "text"),
 }
 
+#: Olympus. Nothing in the note's own directory identifies anything. The body
+#: serial, the lens serial and the lens model are one directory down, in the
+#: block the vendor calls Equipment. The lens serial is worth as much as the
+#: body's and sometimes more, because a lens is sold on and photographed with
+#: again under a different owner.
+_OLYMPUS_EQUIPMENT = {
+    0x0101: ("SerialNumber", "text"),
+    0x0102: ("InternalSerialNumber", "text"),
+    0x0202: ("LensSerialNumber", "text"),
+    0x0203: ("LensModel", "text"),
+}
+_OLYMPUS_SUBDIRECTORIES = {0x2010: _OLYMPUS_EQUIPMENT}
+
 #: Panasonic. The serial is stamped by the factory and encodes the body's build
 #: date, which is why it is longer than a counter. The field it sits in is wider
 #: than the text and the camera pads the front of it rather than the end.
@@ -79,15 +104,38 @@ _PANASONIC = {
     0x0025: ("InternalSerialNumber", "text"),
 }
 
-#: A signature, where the directory begins after it, whose space its offsets
-#: are counted in, and the fields worth naming. Every row is confirmed against
-#: a photograph from a camera that writes it.
-_SIGNATURES: tuple[tuple[bytes, int, str, dict[int, tuple[str, str]]], ...] = (
-    (b"Apple iOS\x00", 14, NOTE_RELATIVE, _APPLE),
-    (b"OLYMPUS\x00II", 12, NOTE_RELATIVE, {}),
-    (b"OLYMP\x00", 8, TIFF_RELATIVE, {}),
-    (b"Panasonic\x00", 12, TIFF_RELATIVE, _PANASONIC),
-    (b"Nikon\x00\x01", 8, TIFF_RELATIVE, {}),
+
+@dataclass(frozen=True, slots=True)
+class _Layout:
+    """How one vendor's signed note is put together.
+
+    `directory` and `mark` are counted from the note's first byte. A note whose
+    offsets are its own carries a byte-order mark, because the vendor does not
+    promise to match the file around it; where that mark sits differs by vendor
+    and one of them keeps it inside the signature itself.
+    """
+
+    signature: bytes
+    directory: int
+    scheme: str
+    fields: dict[int, tuple[str, str]] = field(default_factory=dict)
+    mark: int | None = None
+    subdirectories: dict[int, dict[int, tuple[str, str]]] = field(default_factory=dict)
+
+
+#: Every row is confirmed against a photograph from a camera that writes it.
+_SIGNATURES: tuple[_Layout, ...] = (
+    _Layout(b"Apple iOS\x00", 14, NOTE_RELATIVE, _APPLE, mark=12),
+    _Layout(
+        b"OLYMPUS\x00II",
+        12,
+        NOTE_RELATIVE,
+        mark=8,
+        subdirectories=_OLYMPUS_SUBDIRECTORIES,
+    ),
+    _Layout(b"OLYMP\x00", 8, TIFF_RELATIVE),
+    _Layout(b"Panasonic\x00", 12, TIFF_RELATIVE, _PANASONIC),
+    _Layout(b"Nikon\x00\x01", 8, TIFF_RELATIVE),
 )
 
 #: What the note's byte order says. A camera writes the note in the same order
@@ -138,9 +186,9 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         return _fujifilm(note)
 
     vendor = _vendor(make)
-    for signature, skip, scheme, table in _SIGNATURES:
-        if note.startswith(signature):
-            return _signed(vendor, note, data, at, size, skip, scheme, table, endian)
+    for layout in _SIGNATURES:
+        if note.startswith(layout.signature):
+            return _signed(vendor, note, data, at, size, layout, endian)
     if note.startswith(b"\xff\xd8\xff"):
         # Not a directory at all. A few compacts write a whole JPEG here, and
         # it is usually several times the size of the EXIF thumbnail.
@@ -169,30 +217,54 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
 
 
 def _signed(
-    vendor: str,
-    note: bytes,
-    data: Raw,
-    at: int,
-    size: int,
-    skip: int,
-    scheme: str,
-    table: dict[int, tuple[str, str]],
-    endian: str,
+    vendor: str, note: bytes, data: Raw, at: int, size: int, layout: _Layout, endian: str
 ) -> MakerNotes:
     """Read a note whose signature says where its directory is.
 
-    A note-relative layout carries its own byte-order mark in the two bytes
-    before the directory, because the vendor does not promise to match the file
-    around it. A TIFF-relative one has no mark and no choice: its offsets only
-    mean anything in the container's order.
+    A note-relative layout is read in the order it declares for itself and is
+    addressed from its own first byte. A TIFF-relative one has no mark and no
+    choice: its offsets only mean anything in the container's order and its
+    space.
     """
-    if scheme == NOTE_RELATIVE:
-        mark = note[skip - 2 : skip]
-        inner = "<" if mark == b"II" else ">" if mark == b"MM" else endian
-        entries = _entries(note, skip, inner, base=0, limit=len(note))
-        return _notes(vendor, scheme, entries, size, table, inner)
-    entries = _entries(data, at + skip, endian, base=0, limit=len(data))
-    return _notes(vendor, scheme, entries, size, table, endian)
+    if layout.scheme == NOTE_RELATIVE:
+        inner = _mark(note, layout.mark, endian)
+        entries = _entries(note, layout.directory, inner, base=0, limit=len(note))
+        extra = _subdirectories(note, entries, inner, len(note), layout.subdirectories)
+        return _notes(vendor, layout.scheme, entries, size, layout.fields, inner, extra=extra)
+    entries = _entries(data, at + layout.directory, endian, base=0, limit=len(data))
+    extra = _subdirectories(data, entries, endian, len(data), layout.subdirectories)
+    return _notes(vendor, layout.scheme, entries, size, layout.fields, endian, extra=extra)
+
+
+def _mark(note: bytes, mark: int | None, endian: str) -> str:
+    """The byte order a note declares for itself, or the container's."""
+    if mark is None:
+        return endian
+    found = note[mark : mark + 2]
+    return "<" if found == b"II" else ">" if found == b"MM" else endian
+
+
+def _subdirectories(
+    data: Raw,
+    entries: dict[int, tuple[int, bytes]],
+    endian: str,
+    limit: int,
+    tables: dict[int, dict[int, tuple[str, str]]],
+) -> dict[str, str]:
+    """Named fields from the sub-directories a vendor groups them into.
+
+    Where a value would be there is a pointer to another directory. Its tags
+    repeat the numbers used by the note's own directory and mean something else,
+    so each is named from its own table rather than the two being read as one.
+    """
+    fields: dict[str, str] = {}
+    for tag, table in tables.items():
+        found = entries.get(tag)
+        if found is None or len(found[1]) < 4:
+            continue
+        (inner,) = struct.unpack_from(endian + "I", found[1], 0)
+        fields.update(_named(_entries(data, inner, endian, base=0, limit=limit), table, endian))
+    return fields
 
 
 def _nikon(note: bytes) -> MakerNotes | None:
@@ -278,7 +350,18 @@ def _notes(
     table: dict[int, tuple[str, str]],
     endian: str,
     byte_order: str = SAME_ORDER,
+    extra: dict[str, str] | None = None,
 ) -> MakerNotes:
+    fields = _named(entries, table, endian)
+    for label, value in (extra or {}).items():
+        fields.setdefault(label, value)
+    return MakerNotes(vendor, scheme, len(entries), size, fields, byte_order)
+
+
+def _named(
+    entries: dict[int, tuple[int, bytes]], table: dict[int, tuple[str, str]], endian: str
+) -> dict[str, str]:
+    """The fields one directory names, by the table that describes it."""
     fields: dict[str, str] = {}
     for tag, (kind, raw) in entries.items():
         named = table.get(tag)
@@ -293,7 +376,7 @@ def _notes(
             value = _number(raw, kind, endian)
         if value and label not in fields:
             fields[label] = value
-    return MakerNotes(vendor, scheme, len(entries), size, fields, byte_order)
+    return fields
 
 
 def _entries(

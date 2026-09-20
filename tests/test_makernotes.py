@@ -337,3 +337,50 @@ def test_a_value_the_camera_pads_with_nulls_is_still_read():
     assert notes is not None
     assert notes.vendor == "Panasonic"
     assert notes.fields["InternalSerialNumber"] == "S010604030293"
+
+
+def olympus_note(serial: str, lens_serial: str, lens: str) -> bytes:
+    """An `OLYMPUS\\0II` note, whose identity fields sit in a sub-directory.
+
+    The two letters in the signature are the note's own byte order, which is
+    not promised to match the file around it. Everything inside is addressed
+    from the note's first byte, including the sub-directory itself.
+    """
+    preamble = b"OLYMPUS\x00II\x03\x00"
+    equipment_at = len(preamble) + 2 + 1 * 12 + 4
+    equipment, values = ifd(
+        [
+            (0x0101, 2, serial.encode() + b"\x00"),
+            (0x0202, 2, lens_serial.encode() + b"\x00"),
+            (0x0203, 2, lens.encode() + b"\x00"),
+        ],
+        "<",
+        value_base=equipment_at + 2 + 3 * 12 + 4,
+    )
+    directory, _none = ifd([(0x2010, 13, struct.pack("<I", equipment_at))], "<", value_base=0)
+    return preamble + directory + equipment + values
+
+
+def test_olympus_names_the_body_and_the_lens_from_a_sub_directory(tmp_path: Path):
+    """The serials are one directory down, which is why they read as absent.
+
+    Olympus puts nothing identifying in the note's own directory: the body
+    serial, the lens serial and the lens model are in a sub-directory it points
+    at. A lens serial is the more interesting of the two, because a lens outlives
+    the body it was mounted on and appears again on the next one.
+    """
+    path = tmp_path / "olympus.jpg"
+    jpeg_with_maker_note(
+        path,
+        "OLYMPUS IMAGING CORP.",
+        "E-P3",
+        olympus_note("B9V508278", "ABG366769", "OLYMPUS M.14-42mm F3.5-5.6 II R"),
+    )
+
+    tags = read_exif(path)
+
+    assert tags is not None and tags.maker is not None
+    assert tags.maker.vendor == "Olympus"
+    assert tags.maker.fields["SerialNumber"] == "B9V508278"
+    assert tags.maker.fields["LensSerialNumber"] == "ABG366769"
+    assert tags.maker.fields["LensModel"] == "OLYMPUS M.14-42mm F3.5-5.6 II R"
