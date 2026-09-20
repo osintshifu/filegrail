@@ -38,16 +38,24 @@ _SHORT = 3
 _LONG = 4
 _UNDEFINED = 7
 _SUBDIRECTORY = 13
+
+#: Every field type TIFF defines, by how many bytes one of them takes. The
+#: signed and floating ones are here because a type this table has no width for
+#: loses its entry without saying so, and the note then reads as smaller than
+#: the camera wrote it.
 _WIDTHS = {
     _BYTE: 1,
     _ASCII: 1,
     _SHORT: 2,
     _LONG: 4,
-    5: 8,
-    6: 1,
+    5: 8,  # RATIONAL
+    6: 1,  # SBYTE
     _UNDEFINED: 1,
-    9: 4,
-    10: 8,
+    8: 2,  # SSHORT
+    9: 4,  # SLONG
+    10: 8,  # SRATIONAL
+    11: 4,  # FLOAT
+    12: 8,  # DOUBLE
     _SUBDIRECTORY: 4,
 }
 
@@ -177,6 +185,21 @@ _NIKON = {
 
 
 @dataclass(frozen=True, slots=True)
+class _Directory:
+    """One directory as found: what it said it held, and what came out of it.
+
+    The two differ when an entry names a type this reader has no width for, or
+    when its value is addressed into a file that was rewritten around the block
+    and the offset can no longer be believed. `declared` describes the note and
+    `values` describes the reading, and a report that prints only the second
+    says the camera wrote less than it did.
+    """
+
+    declared: int
+    values: dict[int, tuple[int, bytes]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class MakerNotes:
     """One vendor block: who wrote it, how it is laid out, what it named."""
 
@@ -186,6 +209,11 @@ class MakerNotes:
     size: int
     fields: dict[str, str] = field(default_factory=dict)
     byte_order: str = SAME_ORDER
+
+    #: How many of the declared entries this reader could believe. Fewer than
+    #: `entries` when the note names a type it has no width for, or when the
+    #: block was moved and its offsets no longer address their values.
+    readable: int = 0
 
     #: A picture carried in the block itself, where the vendor put one there
     #: instead of a directory. Frequently larger than the EXIF thumbnail, and
@@ -252,14 +280,14 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
     )
 
 
-def _declared_preview(entries: dict[int, tuple[int, bytes]], endian: str) -> tuple[int, int] | None:
+def _declared_preview(directory: _Directory, endian: str) -> tuple[int, int] | None:
     """The preview a note points at, as an offset from the TIFF header.
 
     Both halves have to be there for the pointer to mean anything, and a length
     of zero is how a body that took no preview says so.
     """
-    at = entries.get(_MINOLTA_PREVIEW_AT)
-    length = entries.get(_MINOLTA_PREVIEW_LENGTH)
+    at = directory.values.get(_MINOLTA_PREVIEW_AT)
+    length = directory.values.get(_MINOLTA_PREVIEW_LENGTH)
     if at is None or length is None:
         return None
     offset = _number(at[1], at[0], endian)
@@ -299,7 +327,7 @@ def _mark(note: bytes, mark: int | None, endian: str) -> str:
 
 def _subdirectories(
     data: Raw,
-    entries: dict[int, tuple[int, bytes]],
+    directory: _Directory,
     endian: str,
     limit: int,
     tables: dict[int, dict[int, tuple[str, str]]],
@@ -312,7 +340,7 @@ def _subdirectories(
     """
     fields: dict[str, str] = {}
     for tag, table in tables.items():
-        found = entries.get(tag)
+        found = directory.values.get(tag)
         if found is None or len(found[1]) < 4:
             continue
         (inner,) = struct.unpack_from(endian + "I", found[1], 0)
@@ -430,7 +458,7 @@ def _vendor(make: str | None) -> str:
 def _notes(
     vendor: str,
     scheme: str,
-    entries: dict[int, tuple[int, bytes]],
+    directory: _Directory,
     size: int,
     table: dict[int, tuple[str, str]],
     endian: str,
@@ -438,20 +466,25 @@ def _notes(
     extra: dict[str, str] | None = None,
     declared: tuple[int, int] | None = None,
 ) -> MakerNotes:
-    fields = _named(entries, table, endian)
+    fields = _named(directory, table, endian)
     for label, value in (extra or {}).items():
         fields.setdefault(label, value)
     return MakerNotes(
-        vendor, scheme, len(entries), size, fields, byte_order, declared_preview=declared
+        vendor,
+        scheme,
+        directory.declared,
+        size,
+        fields,
+        byte_order,
+        readable=len(directory.values),
+        declared_preview=declared,
     )
 
 
-def _named(
-    entries: dict[int, tuple[int, bytes]], table: dict[int, tuple[str, str]], endian: str
-) -> dict[str, str]:
+def _named(directory: _Directory, table: dict[int, tuple[str, str]], endian: str) -> dict[str, str]:
     """The fields one directory names, by the table that describes it."""
     fields: dict[str, str] = {}
-    for tag, (kind, raw) in entries.items():
+    for tag, (kind, raw) in directory.values.items():
         named = table.get(tag)
         if named is None:
             continue
@@ -469,16 +502,16 @@ def _named(
 
 def _entries(
     data: Raw, offset: int, endian: str, base: int, limit: int, trust_offsets: bool = True
-) -> dict[int, tuple[int, bytes]]:
+) -> _Directory:
     """Walk one directory, returning each entry's type and its raw bytes."""
     if offset <= 0 or offset + 2 > limit:
-        return {}
+        return _Directory(0)
     try:
         (count,) = struct.unpack_from(endian + "H", data, offset)
     except struct.error:
-        return {}
+        return _Directory(0)
     if count == 0 or count > _MAX_ENTRIES or offset + 2 + count * 12 > limit:
-        return {}
+        return _Directory(0)
 
     found: dict[int, tuple[int, bytes]] = {}
     for index in range(count):
@@ -503,7 +536,7 @@ def _entries(
         if at <= 0 or at + size > limit:
             continue
         found[tag] = (kind, bytes(data[at : at + size]))
-    return found
+    return _Directory(count, found)
 
 
 def _text(raw: bytes) -> str | None:

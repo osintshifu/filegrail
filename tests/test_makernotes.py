@@ -36,21 +36,21 @@ def nikon_note(serial: str, shutter: int) -> bytes:
     return preamble + inner_header + directory + values
 
 
-def canon_note(endian: str, serial: int, file_number: int) -> bytes:
+def canon_note(endian: str, serial: int, file_number: int, owner: str = "") -> bytes:
     """Canon writes a bare directory, with no signature and no header.
 
-    Only values that fit in four bytes are used here, because anything longer
-    is addressed in the file's own TIFF space and a fixture cannot know where
-    the note will land until after it has been built.
+    Values that fit in four bytes are inlined. Anything longer is addressed in
+    the file's own TIFF space, which a fixture cannot know until after the note
+    has been placed, so `owner` is only useful for a note whose addressed values
+    are going to be discarded anyway.
     """
-    directory, _values = ifd(
-        [
-            (0x0008, 4, struct.pack(endian + "I", file_number)),
-            (0x000C, 4, struct.pack(endian + "I", serial)),
-        ],
-        endian,
-        value_base=0,
-    )
+    entries = [
+        (0x0008, 4, struct.pack(endian + "I", file_number)),
+        (0x000C, 4, struct.pack(endian + "I", serial)),
+    ]
+    if owner:
+        entries.append((0x0009, 2, owner.encode() + b"\x00"))
+    directory, _values = ifd(entries, endian, value_base=0)
     return directory
 
 
@@ -513,3 +513,57 @@ def test_one_lens_on_two_bodies_groups_by_the_lens_and_not_by_the_camera(tmp_pat
     assert shared["lens"].name == lens
     assert len(shared["lens"].paths) == 2
     assert shared["lens"].basis == "Maker notes · LensSerialNumber"
+
+
+def test_a_note_says_how_many_entries_it_had_and_not_only_how_many_were_read(tmp_path: Path):
+    """A count of what survived reads as a count of what the camera wrote.
+
+    This note declares three entries and two of them are believable. The third
+    is addressed by an offset into a file that was rewritten around the block,
+    so the bytes it points at are no longer the value and it is dropped. Saying
+    two would describe the reader rather than the note, and the difference
+    between the numbers is itself the sign that something rewrote the file.
+    """
+    from filegrail.sources.embedded import read_maker_notes
+
+    path = tmp_path / "canon.jpg"
+    jpeg_with_maker_note(
+        path, "Canon", "Canon EOS 40D", canon_note("<", 1230405678, 1242489, "Someone")
+    )
+
+    record = read_maker_notes(path)
+
+    assert record is not None
+    assert "3 entries, 2 of them readable" in record.note
+
+
+def test_every_field_type_tiff_allows_is_counted(tmp_path: Path):
+    """A legal type this reader has no width for silently loses an entry.
+
+    Signed and floating types are as much a part of TIFF as the unsigned ones
+    and cameras do write them. An entry skipped for that reason is not reported
+    as skipped, it is simply absent, so the note reads as smaller than it is.
+    """
+    from filegrail.sources.embedded import read_maker_notes
+
+    signed_short, single, double = 8, 11, 12
+    note, _values = ifd(
+        [
+            (0x0008, 4, struct.pack(">I", 1242489)),
+            (0x0094, signed_short, struct.pack(">h", -2)),
+            (0x0095, single, struct.pack(">f", 1.5)),
+            (0x0096, double, struct.pack(">d", 2.5)),
+        ],
+        ">",
+        value_base=0,
+    )
+    path = tmp_path / "canon.jpg"
+    jpeg_with_maker_note(path, "Canon", "Canon EOS 40D", note)
+
+    record = read_maker_notes(path)
+
+    assert record is not None
+    # The eight-byte double is addressed rather than inlined, and the fixture
+    # cannot place it, so it is counted and not read. The other three are.
+    assert "4 entries, 3 of them readable" in record.note
+    assert record.fields["FileNumber"] == "124-2489"

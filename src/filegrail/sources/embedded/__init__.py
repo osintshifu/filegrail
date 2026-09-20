@@ -322,7 +322,15 @@ def read_maker_notes(path: Path) -> EvidenceRecord | None:
     if notes.declared_preview:
         at, length = notes.declared_preview
         fields["Preview:Declared"] = f"{length} bytes at offset {at} from the TIFF header"
-    detail = [f"{notes.entries} entries", notes.scheme]
+    counted = f"{notes.entries} entries"
+    if notes.readable != notes.entries:
+        # Both numbers, because either alone misleads. An entry can go unread
+        # for reasons that say nothing - a block too large to be a field, a
+        # degenerate length - and for one that says a great deal, which is a
+        # byte order that disagrees with the container. That one is named below,
+        # so the reader has the size of the gap and its reason together.
+        counted += f", {notes.readable} of them readable"
+    detail = [counted, notes.scheme]
     if notes.preview:
         detail.append("carries a preview image")
     if notes.declared_preview and sum(notes.declared_preview) > path.stat().st_size:

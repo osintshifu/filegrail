@@ -42,7 +42,7 @@ def ifd(entries: list[tuple[int, int, bytes]], endian: str, value_base: int) -> 
     lets the caller decide, because a maker note counts its offsets from its
     own first byte while an ordinary directory counts them from the TIFF header.
     """
-    counts = {1: 1, 2: 1, 3: 2, 4: 4, 7: 1, 13: 4}
+    counts = {1: 1, 2: 1, 3: 2, 4: 4, 7: 1, 8: 2, 11: 4, 12: 8, 13: 4}
     directory = struct.pack(endian + "H", len(entries))
     values = b""
     for tag, kind, raw in entries:
