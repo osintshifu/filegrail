@@ -18,14 +18,19 @@ NOT_EVALUATED = "not evaluated"
 
 PHOTO_SUFFIXES = exif.SUFFIXES | {".png", ".apng", ".bmp", ".dib", ".gif", ".jfif"}
 
-#: How many bytes of the page one report may spend on images. Every map is
-#: bounded on its own and a collection is not: two hundred photographs from a
-#: phone measured 1.5 GB of HTML and 5.5 GB of memory to build, which is not a
-#: report. Counted as the page carries them rather than as they are produced,
-#: because the number a person wants is the size of the file they end up with.
-#: The page still passes it a little, by the last photograph admitted and by
-#: the markup around the images. Raised or lifted with `--image-budget`.
+#: How many bytes of images one report may produce when it carries them inside
+#: itself. Every map is bounded on its own and a collection is not: two hundred
+#: photographs from a phone measured 1.5 GB of HTML and 5.5 GB of memory to
+#: build, which is not a report. Counted as the page carries them, four bytes
+#: for every three, because the number a person wants is the size of the file
+#: they end up with. The page still passes it a little, by the last photograph
+#: admitted and by the markup around the images.
 IMAGE_BUDGET = 16 * 1024 * 1024
+
+#: And when it writes them out beside itself instead. Far larger, because the
+#: page stays small either way and a browser loads only what is on screen: what
+#: is bounded here is a directory on disk, not a document to be parsed whole.
+LINKED_IMAGE_BUDGET = 512 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +77,9 @@ class _Budget:
         return self.limit is not None and self.used >= self.limit
 
     def take(self, artifacts: list[PhotoArtifact]) -> None:
-        # Base64 is what the page holds, and it is four bytes for every three.
+        # Base64 is what a page holds, and it is four bytes for every three. A
+        # directory holds the bytes themselves, but counting the larger of the
+        # two keeps one allowance meaning one thing.
         self.used += sum(len(artifact.data) for artifact in artifacts) * 4 // 3
 
 

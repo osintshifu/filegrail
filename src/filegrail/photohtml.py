@@ -8,9 +8,12 @@
 from __future__ import annotations
 
 import base64
+import os
+from dataclasses import dataclass
 from datetime import datetime
 from html import escape
-from pathlib import Path
+from pathlib import Path, PurePath
+from urllib.parse import quote
 
 from . import __version__
 from .models import BLOCK_LABELS, EvidenceRecord
@@ -21,6 +24,17 @@ POLICY = (
     "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+
+#: The same policy for a report whose images sit beside it rather than inside
+#: it. Local files are allowed and nothing else is: no scheme here reaches the
+#: network, which is the point the policy is there to make.
+LINKED_POLICY = (
+    "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: file:; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+#: What to call a written-out image, by what it is.
+_SUFFIXES = {"image/png": ".png", "image/jpeg": ".jpg"}
 
 STYLE = r"""
 :root{color-scheme:light;--table:#E7ECEE;--sleeve:#17232B;--paper:#FAFBFB;
@@ -114,18 +128,68 @@ padding:12mm 0}.case-fact b,.eyebrow{color:#000}main{width:100%;margin:0}.contac
 """
 
 
+@dataclass(frozen=True, slots=True)
+class _Assets:
+    """Where a report keeps its images when it does not keep them inside itself.
+
+    A directory beside the page, and the path that reaches it from there. The
+    photograph is not copied into it: the page points at the file that was
+    analysed, which is smaller and the better answer, because what a reader then
+    looks at is the evidence rather than a re-encoding of it. Everything else
+    here was computed and exists nowhere else, so it is written out.
+    """
+
+    directory: Path
+    page: Path
+
+    def source(self, photo: PhotoResult, artifact: PhotoArtifact) -> str:
+        if artifact.key == "main-preview":
+            linked = _relative(Path(photo.path), self.page)
+            if linked is not None:
+                return linked
+        name = f"{photo.number:03d}-{artifact.key}{_SUFFIXES.get(artifact.mime, '.bin')}"
+        self.directory.mkdir(parents=True, exist_ok=True)
+        (self.directory / name).write_bytes(artifact.data)
+        return f"{quote(self.directory.name)}/{name}"
+
+
+def _relative(target: Path, page: Path) -> str | None:
+    """`target` as a URL relative to the directory holding `page`.
+
+    None where no relative path exists, which happens on Windows between two
+    drives. The caller writes the image out instead, so a report never carries
+    a link that cannot resolve.
+    """
+    try:
+        walked = os.path.relpath(target, page.parent)
+    except ValueError:
+        return None
+    return quote(PurePath(walked).as_posix())
+
+
 def render_photo_html(
     collection: PhotoCollection,
     *,
     output: Path | None = None,
     now: datetime | None = None,
+    assets: Path | None = None,
 ) -> str:
-    """Render one complete photo-forensics report with no external resources."""
+    """Render one complete photo-forensics report.
+
+    With `assets` the images are written into that directory and pointed at, and
+    the page is the small part; without it every image is carried inside the page
+    and the report is one file. `assets` needs `output`, because a relative link
+    is relative to something.
+    """
+    if assets is not None and output is None:
+        raise ValueError("assets needs output: a link is relative to the page holding it")
+    written = _Assets(assets, output) if assets is not None and output is not None else None
     moment = (now or datetime.now().astimezone()).strftime("%Y-%m-%d %H:%M %Z").strip()
     title = f"{output.name} - FileGrail Photo Lab" if output else "FileGrail Photo Lab"
     head = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-        f'<meta http-equiv="Content-Security-Policy" content="{POLICY}">'
+        f'<meta http-equiv="Content-Security-Policy" '
+        f'content="{LINKED_POLICY if written else POLICY}">'
         '<meta name="referrer" content="no-referrer">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{_e(title)}</title><style>{STYLE}</style></head><body>"
@@ -134,7 +198,15 @@ def render_photo_html(
         ("target", collection.root),
         ("analysed", moment),
         ("report", str(output) if output else "in-memory render"),
-        ("mode", "redacted" if collection.redacted else "full media"),
+        # Where the images are is the first thing to know about a page that
+        # may not carry them: one of these reports travels alone and one does
+        # not, and a reader has to be told which they are holding.
+        (
+            "mode",
+            "redacted"
+            if collection.redacted
+            else ("linked media" if written else "embedded media"),
+        ),
     ]
     masthead = (
         '<header class="lab-header" id="top"><div class="brand">'
@@ -146,9 +218,9 @@ def render_photo_html(
         )
         + "</div></header>"
     )
-    body = ["<main>", _summary(collection), _contact_sheet(collection)]
-    body.extend(_plate(photo, collection.redacted) for photo in collection.photos)
-    body.append(_notes(collection))
+    body = ["<main>", _summary(collection), _contact_sheet(collection, written)]
+    body.extend(_plate(photo, collection.redacted, written) for photo in collection.photos)
+    body.append(_notes(collection, written))
     body.append("</main></body></html>")
     return head + masthead + "".join(body)
 
@@ -165,7 +237,7 @@ def _summary(collection: PhotoCollection) -> str:
     )
 
 
-def _contact_sheet(collection: PhotoCollection) -> str:
+def _contact_sheet(collection: PhotoCollection, written: _Assets | None) -> str:
     heading = (
         '<section aria-labelledby="contact-title"><div class="section-head">'
         '<h2 id="contact-title">Contact sheet</h2><p>One index entry per analysed photograph.</p>'
@@ -180,7 +252,9 @@ def _contact_sheet(collection: PhotoCollection) -> str:
     for photo in collection.photos:
         artifact = _first_artifact(photo, "main-preview", "embedded-preview", "maker-preview")
         image = (
-            _image(artifact, photo.name) if artifact else '<div class="empty">Media omitted</div>'
+            _image(artifact, photo.name, photo, written)
+            if artifact
+            else '<div class="empty">Media omitted</div>'
         )
         cards.append(
             f'<a class="contact" href="#photo-{photo.number:03d}">{image}'
@@ -202,20 +276,20 @@ def _contact_sheet(collection: PhotoCollection) -> str:
     )
 
 
-def _plate(photo: PhotoResult, redacted: bool) -> str:
+def _plate(photo: PhotoResult, redacted: bool, written: _Assets | None) -> str:
     head = (
         f'<article class="plate" id="photo-{photo.number:03d}"><header class="plate-head">'
         f'<span class="plate-number">#{photo.number:03d}</span><div class="plate-title">'
         f"<h2>{_e(photo.name)}</h2><p>{_e(photo.path)}</p></div>"
         f'<span class="format-stamp">{_e(photo.format)}</span></header>'
     )
-    stage = _stage(photo, redacted)
+    stage = _stage(photo, redacted, written)
     rail = _rail(photo)
-    diagnostics = _diagnostics(photo)
+    diagnostics = _diagnostics(photo, written)
     return head + f'<div class="plate-body">{stage}{rail}</div>{diagnostics}</article>'
 
 
-def _stage(photo: PhotoResult, redacted: bool) -> str:
+def _stage(photo: PhotoResult, redacted: bool, written: _Assets | None) -> str:
     corners = "".join(
         f'<i class="registration-corner corner-{place}" aria-hidden="true"></i>'
         for place in ("tl", "tr", "bl", "br")
@@ -233,7 +307,7 @@ def _stage(photo: PhotoResult, redacted: bool) -> str:
             if artifact:
                 figures.append(
                     '<figure class="stage-figure">'
-                    + _image(artifact, f"{photo.name}: {artifact.label}")
+                    + _image(artifact, f"{photo.name}: {artifact.label}", photo, written)
                     + f"<figcaption>{_e(artifact.label)} / {_e(artifact.method)}</figcaption></figure>"
                 )
         content = '<div class="stage-images">' + "".join(figures) + "</div>"
@@ -298,7 +372,7 @@ def _evidence(record: EvidenceRecord) -> str:
     return f"<li><b>{_e(named)}</b><br>{detail}</li>"
 
 
-def _diagnostics(photo: PhotoResult) -> str:
+def _diagnostics(photo: PhotoResult, written: _Assets | None) -> str:
     artifacts = [
         artifact
         for artifact in photo.artifacts
@@ -322,7 +396,7 @@ def _diagnostics(photo: PhotoResult) -> str:
         items.append(
             '<details class="diagnostic" open><summary>'
             f"{_e(artifact.label)}<small>{_e(artifact.method)}</small></summary><figure>"
-            + _image(artifact, f"{photo.name}: {artifact.label}")
+            + _image(artifact, f"{photo.name}: {artifact.label}", photo, written)
             + note
             + "</figure></details>"
         )
@@ -410,7 +484,7 @@ def _jpeg_structure(jpeg: JpegAnalysis) -> str:
     )
 
 
-def _notes(collection: PhotoCollection) -> str:
+def _notes(collection: PhotoCollection, written: _Assets | None) -> str:
     redaction = (
         " Pixel-bearing previews and diagnostics were omitted by redaction."
         if collection.redacted
@@ -420,11 +494,21 @@ def _notes(collection: PhotoCollection) -> str:
     # reader looking for fine texture in an ELA map has to know that some of it
     # can come from the report rather than from the photograph.
     encoding = (
-        " Photographs and continuous-tone maps are embedded as JPEG so the report stays one"
-        " portable file, and fine texture in a map can come from that encoding. Histograms"
-        " and bit planes are stored losslessly."
+        " Photographs and continuous-tone maps are stored as JPEG, and fine texture in a map"
+        " can come from that encoding. Histograms and bit planes are stored losslessly."
         if any(photo.artifacts for photo in collection.photos)
         else ""
+    )
+    # Where the images are is a fact about the report, and one with a
+    # consequence: a page that points at its material shows whatever is at
+    # those paths now, which is why the digest of each photograph is beside it.
+    where = (
+        " Each photograph is shown from where it lies on disk and the maps sit in the"
+        f" directory {_e(written.directory.name)} beside this page, so the two move together."
+        " The digest recorded for a photograph is the one read at the time; a file that no"
+        " longer matches it is no longer the file described here."
+        if written is not None
+        else " Every image is carried inside this page, which is one portable file."
     )
     return (
         '<section class="report-notes" aria-labelledby="notes-title"><div class="section-head">'
@@ -432,9 +516,7 @@ def _notes(collection: PhotoCollection) -> str:
         "This report records observable file structure, metadata and declared image transformations. "
         "A conflict is a mechanically supported disagreement. A signal identifies material for review. "
         "Neither state establishes that a photograph is authentic or manipulated."
-        + encoding
-        + redaction
-        + "</p></section>"
+        f"{where}" + encoding + redaction + "</p></section>"
     )
 
 
@@ -442,14 +524,15 @@ def _first_artifact(photo: PhotoResult, *keys: str) -> PhotoArtifact | None:
     return next((item for key in keys for item in photo.artifacts if item.key == key), None)
 
 
-def _image(artifact: PhotoArtifact, alt: str) -> str:
-    encoded = base64.b64encode(artifact.data).decode("ascii")
+def _image(artifact: PhotoArtifact, alt: str, photo: PhotoResult, written: _Assets | None) -> str:
+    if written is None:
+        encoded = base64.b64encode(artifact.data).decode("ascii")
+        source = f"data:{artifact.mime};base64,{encoded}"
+    else:
+        source = written.source(photo, artifact)
     width = f' width="{artifact.width}"' if artifact.width else ""
     height = f' height="{artifact.height}"' if artifact.height else ""
-    return (
-        f'<img src="data:{_e(artifact.mime)};base64,{encoded}" alt="{_e(alt)}"'
-        f'{width}{height} loading="lazy">'
-    )
+    return f'<img src="{_e(source)}" alt="{_e(alt)}"{width}{height} loading="lazy">'
 
 
 def _size(value: int) -> str:

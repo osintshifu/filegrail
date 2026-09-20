@@ -176,3 +176,52 @@ def test_includes_responsive_print_focus_and_reduced_motion_rules():
     assert "@media(prefers-reduced-motion:reduce)" in page
     assert ":focus-visible" in page
     assert "registration-corner" in page
+
+
+def photograph(path: Path) -> None:
+    """A real JPEG on disk, so a report has something to point at."""
+    from PIL import Image
+
+    tags = Image.Exif()
+    tags[0x010F] = "Canon"
+    tags[0x0110] = "Canon EOS 40D"
+    Image.new("RGB", (800, 600), (70, 110, 90)).save(path, quality=90, exif=tags)
+
+
+def test_a_linked_report_points_at_the_photographs_and_keeps_its_maps_beside_it(tmp_path: Path):
+    """The everyday report: a page a browser opens, beside the files it shows.
+
+    A photograph is already on disk, so the page points at it rather than
+    carrying a second copy encoded as text. The maps are not on disk anywhere -
+    they are computed - so they are written out beside the page. The page then
+    weighs kilobytes and the browser loads only what a reader has scrolled to,
+    instead of parsing every image before showing the first.
+    """
+    from filegrail.photo import analyse_photos
+    from filegrail.photohtml import render_photo_html
+    from filegrail.scan import scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("one.jpg", "two.jpg"):
+        photograph(case / name)
+
+    records = scan(case, use_shell_history=False, home=tmp_path / "empty", hash_files=True)
+    collection = analyse_photos(records, case, budget=None)
+    out = case / "report.html"
+    images = case / "report.files"
+
+    page = render_photo_html(collection, output=out, assets=images, now=NOW)
+
+    assert "data:image/" not in page
+    assert 'src="report.files/001-ela-q90.jpg"' in page
+    assert sorted(item.name for item in images.iterdir())[:2] == [
+        "001-bit-planes.png",
+        "001-ela-q75.jpg",
+    ]
+    # The photograph itself is pointed at where it lies, not copied.
+    assert 'src="one.jpg"' in page
+    assert not any(item.name.endswith("main-preview.jpg") for item in images.iterdir())
+    # A link is only a record if a reader can tell the file is still the one read.
+    assert collection.photos[0].sha256 is not None
+    assert collection.photos[0].sha256 in page

@@ -957,7 +957,7 @@ The complete report remains one portable HTML file.
 
 ## Photo-forensics reports
 
-`filegrail photo` builds a separate, self-contained HTML report for one still image or a directory of images:
+`filegrail photo` builds a separate HTML report for one still image or a directory of images:
 
 ```bash
 filegrail photo ./photos --out photo-report.html --hash
@@ -972,13 +972,17 @@ The zero-dependency structural pass records:
 - an exact IJG quantization-table match or a clearly labelled nearest-quality heuristic;
 - supported dimension conflicts, materially different thumbnail aspect ratios and repeated camera-body serials.
 
-With `filegrail[photo]`, the same report also embeds bounded image diagnostics: a report preview, RGB and luminance histogram, luminance gradient, selected bit planes, local median residual, ELA at qualities 90 and 75, and comparison with an embedded thumbnail. Every map names its method and parameters. A failed method is isolated and does not invalidate the other results.
+With `filegrail[photo]`, the same report also carries bounded image diagnostics: a report preview, RGB and luminance histogram, luminance gradient, selected bit planes, local median residual, ELA at qualities 90 and 75, and comparison with an embedded thumbnail. Every map names its method and parameters. A failed method is isolated and does not invalidate the other results.
 
 The report deliberately has no authenticity score. It separates facts, mechanically supported conflicts, review signals and methods that were not evaluated. These observations do not prove that a photograph is authentic or manipulated.
 
-`--redact` removes every pixel-bearing preview and diagnostic from the HTML, in addition to redacting supported text values. The report remains one offline file with a CSP and no external assets.
+The page shows each photograph from where it lies on disk and writes its diagnostic maps to a directory beside itself, because a map is computed and exists nowhere else. The page is then small and a browser loads only what is on screen. Every photograph is hashed, so a reader can tell whether the file being displayed is still the file that was read.
 
-A report carries only so many megabytes of images. Photographs past that allowance keep every fact read from them, lose their pictures and say so, and the report states how many were rendered. Raise the allowance, or remove it, with `--image-budget`.
+`--embed` carries every image inside the page instead, as one portable file with a CSP and no external references. That is the form to hand to somebody, and the larger one: two hundred photographs measured 1.5 MB linked and 1.5 GB embedded.
+
+`--redact` removes every pixel-bearing preview and diagnostic, in addition to redacting supported text values.
+
+A report produces only so many megabytes of images. Photographs past that allowance keep every fact read from them, lose their pictures and say so, and the report states how many were rendered. Raise the allowance, or remove it, with `--image-budget`.
 
 ---
 
@@ -1042,11 +1046,12 @@ One output form at a time: `--timeline`, `--json`, `--html`, `--graphml` and `--
 
 | Option | Purpose |
 | --- | --- |
-| `-o`, `--out FILE` | Required self-contained HTML destination |
+| `-o`, `--out FILE` | Required HTML destination; maps are written to `FILE.files` beside it |
+| `--embed` | Carry every image inside the page, as one portable file |
 | `--hash` | Compute SHA-256 for each photograph |
 | `--redact` | Redact supported text and omit every pixel-bearing artifact |
 | `--no-recurse` | Analyze only the named directory level |
-| `--image-budget MB` | Megabytes of images one report may carry, `0` for no limit |
+| `--image-budget MB` | Megabytes of images one report may produce, `0` for no limit |
 
 ### Exit codes
 

@@ -261,11 +261,11 @@ def _photo_parser() -> argparse.ArgumentParser:
     # Imported here so the default in the help text is the one the analyser
     # uses, without the cost of loading the photo readers to build any other
     # parser.
-    from .photo import IMAGE_BUDGET
+    from .photo import IMAGE_BUDGET, LINKED_IMAGE_BUDGET
 
     parser = argparse.ArgumentParser(
         prog="filegrail photo",
-        description="Build one self-contained HTML forensic report for still photographs.",
+        description="Build an HTML forensic report for still photographs.",
     )
     parser.add_argument("path", type=Path, help="Photograph or directory to examine.")
     parser.add_argument(
@@ -274,7 +274,7 @@ def _photo_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         metavar="FILE",
-        help="Write the self-contained photo report to this HTML file.",
+        help="Write the photo report to this HTML file; maps go to a directory beside it.",
     )
     parser.add_argument(
         "--redact",
@@ -288,14 +288,25 @@ def _photo_parser() -> argparse.ArgumentParser:
         "--hash", action="store_true", dest="hash_files", help="Compute SHA-256 for each image."
     )
     parser.add_argument(
+        "--embed",
+        action="store_true",
+        help=(
+            "Carry every image inside the page, as one portable file. Without it the page "
+            "points at the photographs where they lie and writes its maps to a directory "
+            "beside itself, which keeps the page small and lets a browser load only what "
+            "is on screen."
+        ),
+    )
+    parser.add_argument(
         "--image-budget",
         type=_megabytes,
-        default=IMAGE_BUDGET // (1024 * 1024),
         metavar="MB",
         help=(
-            "Megabytes of previews and diagnostic maps one report may carry "
-            "(default: %(default)s, 0 for no limit). Photographs past it keep every "
-            "fact read from them and lose only their pictures."
+            "Megabytes of previews and diagnostic maps one report may produce "
+            f"(default: {LINKED_IMAGE_BUDGET // (1024 * 1024)}, or "
+            f"{IMAGE_BUDGET // (1024 * 1024)} with --embed, where the images have to fit "
+            "in a page a browser can open; 0 for no limit). Photographs past it keep "
+            "every fact read from them and lose only their pictures."
         ),
     )
     parser.add_argument("--version", action="version", version=f"filegrail {__version__}")
@@ -663,19 +674,26 @@ def _photo(rest: list[str]) -> int:
     records = scan(
         root,
         recursive=not args.no_recurse,
-        hash_files=args.hash_files,
+        # A page that points at a photograph rather than carrying it shows
+        # whatever is at that path when it is opened. The digest is what lets a
+        # reader tell that it is still the file that was read, so a linked report
+        # is hashed whether or not it was asked for.
+        hash_files=args.hash_files or not args.embed,
         follow_archives=False,
         suffixes=PHOTO_SUFFIXES,
     )
-    collection = analyse_photos(
-        records, root, redact=args.redact, budget=args.image_budget * 1024 * 1024 or None
-    )
+    from .photo import IMAGE_BUDGET, LINKED_IMAGE_BUDGET
+
+    default = IMAGE_BUDGET if args.embed else LINKED_IMAGE_BUDGET
+    budget = default if args.image_budget is None else args.image_budget * 1024 * 1024 or None
+    collection = analyse_photos(records, root, redact=args.redact, budget=budget)
     if not collection.photos:
         print(f"filegrail: no supported photographs found in {args.path}", file=sys.stderr)
         return 2
 
     output = args.out.resolve()
-    report = render_photo_html(collection, output=output)
+    images = None if args.embed else output.with_name(f"{output.stem}.files")
+    report = render_photo_html(collection, output=output, assets=images)
     return _emit_atomic(report, output)
 
 
