@@ -30,6 +30,7 @@ from . import (
     id3,
     isobmff,
     jpeg,
+    makernotes,
     matroska,
     ole,
     pe,
@@ -283,6 +284,42 @@ def _from_exif(path: Path, suffix: str) -> EvidenceRecord | None:
         at=taken,
         geo=location,
         note="; ".join(notes) or None,
+        fields=fields,
+    )
+
+
+def read_maker_notes(path: Path) -> EvidenceRecord | None:
+    """Return the vendor block a camera wrote beside its EXIF, if any.
+
+    Read beside `read_embedded_metadata` rather than inside it, the way a C2PA
+    manifest is: this is a second parser reading a second structure, and the
+    things it names - the serial of the body, the shutter count, the name its
+    owner typed in - are not EXIF and should not arrive claiming to be.
+    """
+    suffix = path.suffix.lower()
+    if suffix not in exif.SUFFIXES:
+        return None
+    try:
+        tags = exif.read_exif(path)
+    except _RECOVERABLE:
+        return None
+    if tags is None or tags.maker is None:
+        return None
+
+    notes = tags.maker
+    fields = {"Vendor": notes.vendor, **notes.fields}
+    detail = [f"{notes.entries} entries", notes.scheme]
+    if notes.byte_order != makernotes.SAME_ORDER:
+        # The camera writes the note in the file's own byte order. The other
+        # order means something rewrote the file around the block.
+        detail.append(f"byte order {notes.byte_order}")
+    return EvidenceRecord(
+        # The camera wrote this, the same as it wrote the EXIF beside it, so it
+        # is the same source. The block is what says which structure it is.
+        source="device-metadata",
+        block="maker-notes",
+        tool=notes.vendor if notes.vendor != "unknown" else None,
+        note="; ".join(detail),
         fields=fields,
     )
 

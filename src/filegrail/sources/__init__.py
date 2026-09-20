@@ -4,7 +4,7 @@ from .archives import inherited_origin, is_archive, list_members, member_origin,
 from .browser import collect_browser_downloads
 from .c2pa import read_c2pa_manifest
 from .content import read_passages
-from .embedded import read_embedded_metadata
+from .embedded import read_embedded_metadata, read_maker_notes
 from .fsattrs import read_file_attributes
 from .iptc import read_iptc
 from .mail import read_mail
@@ -25,6 +25,7 @@ __all__ = [
     "collect_browser_downloads",
     "read_file_attributes",
     "read_embedded_metadata",
+    "read_maker_notes",
     "read_c2pa_manifest",
     "read_passages",
     "read_iptc",

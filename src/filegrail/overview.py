@@ -82,6 +82,10 @@ AUTHOR_FIELDS: dict[str, tuple[str, ...]] = {
     "matroska": ("ARTIST",),
     "xmp": ("dc:creator",),
     "iptc": ("By-line",),
+    #: Not the author of the picture but the owner of the body that took it,
+    #: typed into the camera once and stamped on every frame since. As a way of
+    #: putting a name to a photograph it frequently outlives the EXIF artist.
+    "maker-notes": ("OwnerName",),
     "font-tables": ("Designer",),
     "web-document": (
         "author",

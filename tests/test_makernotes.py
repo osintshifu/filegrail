@@ -127,3 +127,53 @@ def test_offsets_are_dropped_when_the_byte_order_disagrees():
     assert notes is not None
     assert notes.byte_order == "opposite to the container"
     assert notes.fields == {"SerialNumber": "4242"}
+
+
+def test_a_scan_records_the_maker_note_as_its_own_block(tmp_path: Path):
+    """The vendor block is evidence in its own right, not a footnote to EXIF.
+
+    It is read by a different parser, it is trusted differently, and it names
+    things standard EXIF does not. Folding it into the EXIF record would hide
+    all three behind one source.
+    """
+    from filegrail.scan import scan
+
+    photo = tmp_path / "case" / "nikon.jpg"
+    photo.parent.mkdir()
+    jpeg_with_maker_note(photo, "NIKON CORPORATION", "NIKON D300", nikon_note("3105364", 241575))
+
+    records = scan(photo, use_shell_history=False, home=tmp_path / "empty")
+    blocks = {record.block: record for record in records[0].evidence if record.block}
+
+    assert "maker-notes" in blocks
+    note = blocks["maker-notes"]
+    assert note.fields["SerialNumber"] == "3105364"
+    assert note.fields["ShutterCount"] == "241575"
+    assert note.fields["Vendor"] == "Nikon"
+
+
+def test_photographs_group_by_a_serial_only_the_maker_note_carries(tmp_path: Path):
+    """The point of reading the block: bodies that standard EXIF never named.
+
+    Clustering already knows how to group by `SerialNumber`. Until now nothing
+    produced one for these files, so every photograph stood alone.
+    """
+    from filegrail.cluster import cluster
+    from filegrail.scan import scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("one.jpg", "two.jpg"):
+        jpeg_with_maker_note(
+            case / name, "NIKON CORPORATION", "NIKON D300", nikon_note("3105364", 241575)
+        )
+
+    records = scan(case, use_shell_history=False, home=tmp_path / "empty")
+    groups = cluster(records)
+
+    # Grouping by model happens too and always did; the serial is the new one,
+    # and it is the stronger claim because a model name identifies a product.
+    devices = [group for group in groups if group.axis == "device"]
+
+    assert [(group.name, len(group.paths)) for group in devices] == [("3105364", 2)]
+    assert devices[0].basis == "Maker notes · SerialNumber"

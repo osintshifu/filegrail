@@ -430,6 +430,7 @@ A telemetry track can reveal movement even when ordinary GPS metadata is absent.
 | **Jupyter notebook** | `.ipynb` | Kernel, language version and author |
 | **PE header** | `.exe` `.dll` `.sys` `.scr` `.ocx` `.cpl` `.drv` `.efi` | Target machine, linker, link time, PDB path, Rich header records, company, product, original file name and version strings, and whether a signature is attached |
 | **Font tables** | `.ttf` `.otf` `.ttc` `.otc` `.woff` | Family, designer, foundry, version, licence, creation and modification times, vendor identifier and variation axes |
+| **Maker notes** | `.jpg` `.jpeg` `.jpe` `.tif` `.tiff` `.dng` `.nef` `.cr2` `.arw` `.orf` `.rw2` `.webp` `.heic` `.heif` `.avif` | The vendor block beside the EXIF: camera body serial number, shutter count, the owner name typed into the camera, firmware version, frame number and lens identity, for Canon and Nikon. Another vendor's block is identified and counted rather than guessed at |
 | **Web document** | `.html` `.htm` `.xhtml` | Author, publisher, dates, canonical URL, Open Graph, Twitter Cards, JSON-LD, Microdata and RDFa |
 | **C2PA** | `.3gp` `.arw` `.avi` `.avif` `.cr2` `.dng` `.heic` `.heif` `.jpeg` `.jpg` `.m4a` `.m4v` `.mov` `.mp3` `.mp4` `.nef` `.orf` `.png` `.qt` `.rmi` `.rw2` `.tif` `.tiff` `.wav` `.wave` `.webp` | Producing application, creation data, digital source type such as a generative AI model, the recorded actions and ingredients, and whether the file still matches its manifest |
 

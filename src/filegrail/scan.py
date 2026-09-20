@@ -28,6 +28,7 @@ from .sources import (
     read_file_attributes,
     read_iptc,
     read_mail,
+    read_maker_notes,
     read_members,
     read_messenger_name,
     read_quarantine,
@@ -301,7 +302,12 @@ def scan(
         if is_archive(path):
             pass  # the members are read below, as files of their own
         else:
-            for reader in (read_c2pa_manifest, read_embedded_metadata, read_iptc):
+            for reader in (
+                read_c2pa_manifest,
+                read_embedded_metadata,
+                read_maker_notes,
+                read_iptc,
+            ):
                 claim = reader(path)
                 if claim is not None:
                     record.evidence.append(claim)

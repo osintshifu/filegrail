@@ -311,6 +311,9 @@ def test_the_readme_metadata_table_names_the_extensions_its_readers_declare():
 
     owners = {
         "EXIF": exif.SUFFIXES,
+        # The vendor block lives inside an EXIF directory and nowhere else, so
+        # it is readable exactly where EXIF is readable.
+        "Maker notes": exif.SUFFIXES,
         "Photoshop resources": photoshop.SUFFIXES,
         "PNG text": png.SUFFIXES,
         "ISO BMFF": isobmff.SUFFIXES,
