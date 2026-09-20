@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .cluster import AUTHOR, DEVICE, cluster
+from .cluster import AUTHOR, DEVICE, LENS, cluster
 from .correlate import ATTRIBUTION_CONFLICT, CONFLICTS, CorrelationResult, correlate, instant
 from .correlate import Finding as Correlated
 from .doctor import ARTIFACT, AVAILABLE, HOME_SOURCES, PARTIAL, UNAVAILABLE, Survey
@@ -424,6 +424,21 @@ def _findings(
             add(
                 "camera",
                 "Shared camera body",
+                False,
+                [
+                    ("serial", group.name),
+                    ("files", str(len(group.paths))),
+                    ("evidence", group.basis),
+                ],
+                [Item(path) for path in sorted(group.paths, key=position.__getitem__)],
+            )
+    for group in groups:
+        # Reported apart from the body, and after it, because one lens on two
+        # bodies is a true claim that the bodies were not the same.
+        if group.axis == LENS and len(group.paths) >= 2:
+            add(
+                "lens",
+                "Shared lens",
                 False,
                 [
                     ("serial", group.name),

@@ -837,9 +837,10 @@ A shared original identifier is not presented as direct derivation, because file
 filegrail ./photos --cluster
 ```
 
-Files are grouped around three shared values:
+Files are grouped around the values they share:
 
 - **camera body serial**: a shared serial indicates the same recorded physical camera;
+- **lens serial**: a shared serial indicates the same recorded physical lens, which may have been mounted on more than one body;
 - **camera model**: a shared make and model identifies a device class, not one device;
 - **author**: a shared recorded author connects documents carrying the same metadata value, which does not prove that the same person created them.
 

@@ -33,7 +33,15 @@ _ITERATIONS = 90
 
 #: Node types drawn before identifiers of the same degree: a person or a
 #: camera in a case is worth a place in the picture more than one more URL.
-_PRIORITY = {"file": 0, "person": 1, "device": 1, "camera_model": 1, "org": 1, "handle": 1}
+_PRIORITY = {
+    "file": 0,
+    "person": 1,
+    "device": 1,
+    "lens": 1,
+    "camera_model": 1,
+    "org": 1,
+    "handle": 1,
+}
 
 
 @dataclass(slots=True)

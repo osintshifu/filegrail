@@ -977,6 +977,7 @@ _FAMILIES = {
     "handle": "person",
     "telegram": "person",
     "device": "device",
+    "lens": "device",
     "camera_model": "device",
     "mac": "device",
     "vin": "device",
@@ -1001,7 +1002,7 @@ def _family(kind: str) -> str:
     return _FAMILIES.get(kind, "key")
 
 
-_LABELLED_TYPES = frozenset({"file", "person", "org", "handle", "device", "camera_model"})
+_LABELLED_TYPES = frozenset({"file", "person", "org", "handle", "device", "lens", "camera_model"})
 
 
 def _figure(drawn: Picture | None, files: dict[str, CaseFile], pivot_refs: dict[str, str]) -> str:
@@ -1114,9 +1115,9 @@ def _relationship_options(graph: Graph, connected: set[str], files: dict[str, Ca
         if node.id in connected:
             groups.setdefault(node.type, []).append(node)
 
-    order = {"file": 0, "person": 1, "device": 2, "camera_model": 3}
+    order = {"file": 0, "person": 1, "device": 2, "lens": 3, "camera_model": 4}
     rendered = []
-    for kind, nodes in sorted(groups.items(), key=lambda item: (order.get(item[0], 4), item[0])):
+    for kind, nodes in sorted(groups.items(), key=lambda item: (order.get(item[0], 5), item[0])):
         options = []
         for node in sorted(nodes, key=lambda item: (-degrees[item.id], item.value.casefold())):
             value = _relationship_option_label(node, files)
@@ -1126,6 +1127,7 @@ def _relationship_options(graph: Graph, connected: set[str], files: dict[str, Ca
         label = {
             "camera_model": "camera models",
             "device": "camera bodies",
+            "lens": "lenses",
             "file": "files",
             "person": "people",
         }.get(kind, _type_name(kind).lower())

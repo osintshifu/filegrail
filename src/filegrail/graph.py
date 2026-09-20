@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .cluster import AUTHOR, DEVICE, MODEL, attributes
+from .cluster import AUTHOR, DEVICE, LENS, MODEL, attributes
 from .identify import (
     IN_METADATA,
     PLACE,
@@ -38,6 +38,7 @@ EMAIL_DOMAIN = "email domain"
 URL_HOST = "URL host"
 CONTENT_HASH = "content hash"
 CAMERA_BODY = "camera body"
+CAMERA_LENS = "camera lens"
 CAMERA_MODEL = "camera model"
 AUTHORSHIP = "author"
 ARCHIVE_MEMBER = "member of archive"
@@ -317,6 +318,8 @@ def _attribute_identity(axis: str, value: str) -> tuple[str, str, str]:
     normalized = " ".join(value.split()).casefold()
     if axis == DEVICE:
         return "device", CAMERA_BODY, normalized
+    if axis == LENS:
+        return "lens", CAMERA_LENS, normalized
     if axis == MODEL:
         return "camera_model", CAMERA_MODEL, normalized
     raise ValueError(f"unknown shared attribute axis: {axis}")  # pragma: no cover

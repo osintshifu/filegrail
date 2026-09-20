@@ -27,20 +27,31 @@ AUTHOR = "author"
 #: carrying the same one were taken by the same machine.
 DEVICE = "device"
 
+#: One physical lens. A lens carries a serial of its own and does not stay with
+#: the body it was bought with: it is lent, it is kept across an upgrade and it
+#: is sold on. So two files through one lens are two files naming one object,
+#: which is worth saying and is **not** the same as saying one camera took both.
+#: Separate from `DEVICE` for exactly that reason.
+LENS = "lens"
+
 #: A make and model. It says what kind of camera, and deliberately not which:
 #: the two are a different claim and are never merged, because a reader told
 #: that two photographs "came from the same camera" on the strength of a model
 #: name has been told something the metadata does not support.
 MODEL = "model"
 
-#: The axes in the order the report reads them: what took the picture before
-#: what kind of thing it was, and both before a name somebody typed. Strongest
-#: identification first, so a section cut short keeps the part that identifies
-#: most.
-AXES = (DEVICE, MODEL, AUTHOR)
+#: The axes in the order the report reads them: what took the picture, then what
+#: was mounted on it, then what kind of thing it was, and all three before a name
+#: somebody typed. Strongest identification first, so a section cut short keeps
+#: the part that identifies most.
+AXES = (DEVICE, LENS, MODEL, AUTHOR)
 
 #: Where a camera writes the serial of the body itself.
 _SERIAL_FIELDS = ("BodySerialNumber", "SerialNumber", "InternalSerialNumber")
+
+#: And of the lens. Standard EXIF reserves this name and so does every vendor
+#: block that carries one, so one spelling reaches both.
+_LENS_SERIAL = "LensSerialNumber"
 
 #: How these formats write more than one author into a field meant for one.
 #: OOXML, the PDF `Info` dictionary and Dublin Core all use it, and the value
@@ -134,6 +145,10 @@ def attributes(record: FileRecord) -> Iterator[Attribute]:
             if serial:
                 yield Attribute(DEVICE, serial, f"{block}{_BASIS}{field}", found)
                 break
+
+        lens = (found.fields.get(_LENS_SERIAL) or "").strip()
+        if lens:
+            yield Attribute(LENS, lens, f"{block}{_BASIS}{_LENS_SERIAL}", found)
 
         model = _model(found.fields)
         if model:

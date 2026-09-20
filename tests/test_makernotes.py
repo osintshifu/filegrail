@@ -480,3 +480,36 @@ def test_a_note_that_is_a_fixed_structure_rather_than_a_directory_is_read(tmp_pa
     assert notes.fields["Sequence"] == "2 of 5"
     assert notes.fields["TriggerMode"] == "time lapse"
     assert notes.fields["DateTimeOriginal"] == "2020:03:16 10:00:00"
+
+
+def test_one_lens_on_two_bodies_groups_by_the_lens_and_not_by_the_camera(tmp_path: Path):
+    """A lens is a physical object with a serial of its own, and it moves.
+
+    It outlives the body it was bought with, it is lent, and it is sold on. Two
+    photographs through one lens are two photographs of one object, which is a
+    claim worth making and is not the claim that they came from one camera. The
+    two are kept on separate axes so that a reader is never told the second when
+    the evidence only supports the first.
+    """
+    from filegrail.cluster import cluster
+    from filegrail.scan import scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    lens = "ABG366769"
+    for name, body in (("one.jpg", "B9V508278"), ("two.jpg", "X1234567")):
+        jpeg_with_maker_note(
+            case / name,
+            "OLYMPUS IMAGING CORP.",
+            "E-P3",
+            olympus_note(body, lens, "OLYMPUS M.14-42mm F3.5-5.6 II R"),
+        )
+
+    records = scan(case, use_shell_history=False, home=tmp_path / "empty")
+    shared = {group.axis: group for group in cluster(records) if len(group.paths) > 1}
+
+    # The two bodies differ, so nothing here may say one camera took both.
+    assert "device" not in shared
+    assert shared["lens"].name == lens
+    assert len(shared["lens"].paths) == 2
+    assert shared["lens"].basis == "Maker notes · LensSerialNumber"
