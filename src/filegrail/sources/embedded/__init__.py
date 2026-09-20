@@ -319,9 +319,17 @@ def read_maker_notes(path: Path) -> EvidenceRecord | None:
                 "Preview:SHA256": notes.preview.sha256,
             }
         )
+    if notes.declared_preview:
+        at, length = notes.declared_preview
+        fields["Preview:Declared"] = f"{length} bytes at offset {at} from the TIFF header"
     detail = [f"{notes.entries} entries", notes.scheme]
     if notes.preview:
         detail.append("carries a preview image")
+    if notes.declared_preview and sum(notes.declared_preview) > path.stat().st_size:
+        # The TIFF header sits at a positive offset, so a pointer past the end
+        # of the whole file cannot resolve wherever that header is. The camera
+        # wrote a picture the file no longer carries: it was re-saved smaller.
+        detail.append("declared preview not present in this file")
     if notes.byte_order != makernotes.SAME_ORDER:
         # The camera writes the note in the file's own byte order. The other
         # order means something rewrote the file around the block.

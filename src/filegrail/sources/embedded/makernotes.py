@@ -71,6 +71,12 @@ _CANON = {
     0x0096: ("InternalSerialNumber", "text"),
 }
 
+#: Konica Minolta. The body writes a full preview among the image data and only
+#: a pointer to it here, which is the pair below. Nothing else in the block
+#: identifies the camera, and the two tags are one fact rather than two fields.
+_MINOLTA_PREVIEW_AT = 0x0088
+_MINOLTA_PREVIEW_LENGTH = 0x0089
+
 #: Makes whose own name is two words. Taking the first word alone would file
 #: every Konica Minolta under Konica, and the vendor is what a reader groups by.
 _TWO_WORD_MAKES = ("Konica Minolta", "Eastman Kodak", "Hewlett Packard")
@@ -171,6 +177,11 @@ class MakerNotes:
     #: kept out of the serialised fields the same way every other preview is.
     preview: EmbeddedPreview | None = None
 
+    #: A preview the note points at rather than carries, as its offset from the
+    #: TIFF header and its length. The bytes are elsewhere in the file, or were:
+    #: a file re-saved smaller keeps the pointer and loses the picture.
+    declared_preview: tuple[int, int] | None = None
+
 
 def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerNotes | None:
     """Decode the maker note lying at `at` inside the TIFF block `data`."""
@@ -212,8 +223,33 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         # not the value, so only what fits inside an entry is believed.
         trust_offsets=byte_order == SAME_ORDER,
     )
-    table = _CANON if vendor == "Canon" else {}
-    return _notes(vendor, TIFF_RELATIVE, entries, size, table, note_endian, byte_order)
+    return _notes(
+        vendor,
+        TIFF_RELATIVE,
+        entries,
+        size,
+        _CANON if vendor == "Canon" else {},
+        note_endian,
+        byte_order,
+        declared=_declared_preview(entries, note_endian),
+    )
+
+
+def _declared_preview(entries: dict[int, tuple[int, bytes]], endian: str) -> tuple[int, int] | None:
+    """The preview a note points at, as an offset from the TIFF header.
+
+    Both halves have to be there for the pointer to mean anything, and a length
+    of zero is how a body that took no preview says so.
+    """
+    at = entries.get(_MINOLTA_PREVIEW_AT)
+    length = entries.get(_MINOLTA_PREVIEW_LENGTH)
+    if at is None or length is None:
+        return None
+    offset = _number(at[1], at[0], endian)
+    size = _number(length[1], length[0], endian)
+    if not offset or not size or not offset.isdigit() or not size.isdigit():
+        return None
+    return (int(offset), int(size)) if int(size) else None
 
 
 def _signed(
@@ -351,11 +387,14 @@ def _notes(
     endian: str,
     byte_order: str = SAME_ORDER,
     extra: dict[str, str] | None = None,
+    declared: tuple[int, int] | None = None,
 ) -> MakerNotes:
     fields = _named(entries, table, endian)
     for label, value in (extra or {}).items():
         fields.setdefault(label, value)
-    return MakerNotes(vendor, scheme, len(entries), size, fields, byte_order)
+    return MakerNotes(
+        vendor, scheme, len(entries), size, fields, byte_order, declared_preview=declared
+    )
 
 
 def _named(

@@ -384,3 +384,43 @@ def test_olympus_names_the_body_and_the_lens_from_a_sub_directory(tmp_path: Path
     assert tags.maker.fields["SerialNumber"] == "B9V508278"
     assert tags.maker.fields["LensSerialNumber"] == "ABG366769"
     assert tags.maker.fields["LensModel"] == "OLYMPUS M.14-42mm F3.5-5.6 II R"
+
+
+def minolta_note(endian: str, preview_at: int, preview_length: int) -> bytes:
+    """A Minolta note: a bare directory whose first entry is its own version.
+
+    The preview it names lives outside the note and outside the Exif segment,
+    among the image data, so the note carries only the pointer to it.
+    """
+    directory, _values = ifd(
+        [
+            (0x0000, 7, b"MLT0"),
+            (0x0088, 4, struct.pack(endian + "I", preview_at)),
+            (0x0089, 4, struct.pack(endian + "I", preview_length)),
+        ],
+        endian,
+        value_base=0,
+    )
+    return directory
+
+
+def test_a_note_that_names_a_preview_the_file_cannot_hold_says_so(tmp_path: Path):
+    """The camera wrote a preview into the picture and an editor dropped it.
+
+    Minolta puts a full preview among the image data and only the pointer to it
+    in the note. When the file is later re-saved smaller, the pointer survives
+    and the picture does not, so the note ends up describing something the file
+    no longer contains. That is worth stating: it is the file saying what was
+    taken out of it.
+    """
+    from filegrail.sources.embedded import read_maker_notes
+
+    path = tmp_path / "minolta.jpg"
+    jpeg_with_maker_note(path, "KONICA MINOLTA", "DiMAGE Z3", minolta_note(">", 2019319, 47355))
+
+    record = read_maker_notes(path)
+
+    assert record is not None
+    assert record.fields["Vendor"] == "Konica Minolta"
+    assert record.fields["Preview:Declared"] == "47355 bytes at offset 2019319 from the TIFF header"
+    assert "not present in this file" in record.note
