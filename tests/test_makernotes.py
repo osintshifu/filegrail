@@ -177,3 +177,32 @@ def test_photographs_group_by_a_serial_only_the_maker_note_carries(tmp_path: Pat
 
     assert [(group.name, len(group.paths)) for group in devices] == [("3105364", 2)]
     assert devices[0].basis == "Maker notes · SerialNumber"
+
+
+def test_the_photo_report_names_the_block_and_the_body_it_identifies(tmp_path: Path):
+    """A serial from the vendor block is still a serial, and still says whose.
+
+    The photo report reads the body serial for its identity panel and groups
+    photographs by it. Looking only at the standard EXIF tag meant that the one
+    place cameras actually write it was the one place it did not look.
+    """
+    from filegrail.photo import analyse_photos
+    from filegrail.photohtml import render_photo_html
+    from filegrail.scan import scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("one.jpg", "two.jpg"):
+        jpeg_with_maker_note(
+            case / name, "NIKON CORPORATION", "NIKON D300", nikon_note("3105364", 241575)
+        )
+
+    records = scan(case, use_shell_history=False, home=tmp_path / "empty")
+    collection = analyse_photos(records, case)
+
+    assert [photo.serial for photo in collection.photos] == ["3105364", "3105364"]
+    assert [value for _serial, value in collection.camera_groups] != []
+
+    page = render_photo_html(collection)
+    assert "Maker notes" in page
+    assert "3105364" in page

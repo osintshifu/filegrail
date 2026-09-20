@@ -13,7 +13,7 @@ from html import escape
 from pathlib import Path
 
 from . import __version__
-from .models import EvidenceRecord
+from .models import BLOCK_LABELS, EvidenceRecord
 from .photo import PhotoArtifact, PhotoCollection, PhotoFact, PhotoResult
 from .photojpeg import JpegAnalysis
 
@@ -292,7 +292,10 @@ def _evidence(record: EvidenceRecord) -> str:
     for name, value in sorted(record.fields.items()):
         values.append(f"<b>{_e(name)}</b> <span>{_e(value)}</span>")
     detail = "<br>".join(values) if values else "no decoded fields"
-    return f"<li><b>{_e(record.source)}</b><br>{detail}</li>"
+    # The block, where there is one: EXIF and the vendor's own note are both
+    # device metadata, and a reader has to be able to tell which said what.
+    named = BLOCK_LABELS.get(record.block or "") or record.source
+    return f"<li><b>{_e(named)}</b><br>{detail}</li>"
 
 
 def _diagnostics(photo: PhotoResult) -> str:

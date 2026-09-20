@@ -292,7 +292,10 @@ def _analyse_photo(number: int, record: FileRecord, path: Path, redact: bool) ->
 
     evidence = tuple(record.redacted().evidence if redact else record.evidence)
     camera = exif.camera(tags) if tags else _evidence_value(evidence, "Make", "Model")
-    serial = _field(evidence, "BodySerialNumber")
+    # A camera that fills the standard tag is the exception. `SerialNumber` and
+    # `InternalSerialNumber` come from the vendor block, which is where most
+    # bodies actually write it, and clustering already groups on all three.
+    serial = _field(evidence, "BodySerialNumber", "SerialNumber", "InternalSerialNumber")
     return PhotoResult(
         number,
         str(path),
@@ -340,8 +343,13 @@ def _format_name(suffix: str) -> str:
     }.get(suffix, suffix.removeprefix(".").upper())
 
 
-def _field(evidence: tuple[EvidenceRecord, ...], name: str) -> str | None:
-    return next((record.fields[name] for record in evidence if record.fields.get(name)), None)
+def _field(evidence: tuple[EvidenceRecord, ...], *names: str) -> str | None:
+    """The first of `names` any record carries, in the order they are given."""
+    for name in names:
+        value = next((record.fields[name] for record in evidence if record.fields.get(name)), None)
+        if value:
+            return value
+    return None
 
 
 def _integer_field(evidence: tuple[EvidenceRecord, ...], *names: str) -> int | None:

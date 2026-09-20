@@ -12,6 +12,8 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - `filegrail photo PATH --out REPORT.html` builds a dedicated, self-contained photo-forensics report with a collection contact sheet, one evidence plate per image, explicit method coverage and separate fact, conflict and signal states.
 - The zero-dependency photo core walks JPEG markers through EOI, reports encoding, dimensions, component sampling, quantization and Huffman tables, restart intervals, scans, comments and trailing bytes, and distinguishes exact IJG quantization matches from nearest-quality estimates.
 - EXIF parsing now follows IFD1, Interoperability and SubIFD directories with bounds and cycle detection. Valid embedded JPEG thumbnails are described by dimensions, size and SHA-256 and can be shown in the photo report without entering scan JSON.
+- Camera maker notes are read as an evidence block of their own. Canon and Nikon blocks name the camera body serial number, the shutter count, the owner name typed into the camera, the firmware version, the frame number and the lens identity; another vendor's block is identified and its entries counted rather than guessed at. Because most cameras leave the standard EXIF serial tag empty and write the serial here instead, photographs now cluster by the body that took them.
+- A maker note written in the opposite byte order to the file around it is reported as such, and values it addresses by offset are dropped rather than read from wherever the rewrite left them.
 - The optional `filegrail[photo]` extra adds bounded Pillow/NumPy diagnostics: report preview, RGB and luminance histogram, luminance gradient, selected bit planes, median residual, ELA at qualities 90 and 75, and embedded-thumbnail comparison.
 
 ### Security
