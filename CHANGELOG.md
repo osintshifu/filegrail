@@ -9,27 +9,27 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `filegrail photo PATH --out REPORT.html` builds a report about photographs: a collection contact sheet, one evidence plate per image, explicit method coverage and separate fact, conflict and signal states. The page shows each photograph from where it lies on disk and writes its diagnostic maps to a directory beside itself; `--embed` carries every image inside the page instead, as one portable file. `--image-budget` bounds how much image material one report may produce, and photographs past that allowance keep every fact read from them and say what they lost.
-- The zero-dependency photo core walks JPEG markers through EOI, reports encoding, dimensions, component sampling, quantization and Huffman tables, restart intervals, scans, comments and trailing bytes, and distinguishes exact IJG quantization matches from nearest-quality estimates.
-- EXIF parsing now follows IFD1, Interoperability and SubIFD directories with bounds and cycle detection. Valid embedded JPEG thumbnails are described by dimensions, size and SHA-256 and can be shown without entering scan JSON.
-- Camera maker notes are read as an evidence block of their own, and name what standard EXIF leaves blank: the body serial number, the lens serial number and model, the shutter count, the owner name typed into the camera, the firmware version and the frame number. Because most cameras leave the standard serial tag empty and write the serial here instead, photographs now cluster by the body that took them.
-- Maker notes are located by vendor signature for Apple, Olympus, Panasonic and first-generation Nikon; read out of the sub-directory Olympus keeps its serial numbers in; and read out of the fixed structure a trail camera writes instead of a directory, which is the only thing in such a file that says what took the picture and which numbers the event and the frame within it. An Apple block names the image identifier and the content identifier that a Live Photo's still and film share.
-- A maker note that carries a picture instead of a directory is read as a preview and described by dimensions, byte count and SHA-256. One that only points at a preview is reported as well, including when the file no longer contains what it points at.
-- A note written in the opposite byte order to the file around it is reported as such, and the values it addresses by offset are dropped rather than read from wherever the rewrite left them. A record says how many entries a block declared and, where one produced no field, whether this reader could not read it or would not trust an offset into a block that was moved.
-- Photographs group by lens as well as by body. A lens serial identifies one physical lens, and a lens moves between bodies, so it is a separate axis and a separate node in the graph: two files through one lens are never reported as two files from one camera.
-- A scan has an allowance for the content it reads out of carriers, and names every carrier it left closed once that allowance is gone.
-- The optional `filegrail[photo]` extra adds bounded Pillow/NumPy diagnostics: report preview, RGB and luminance histogram, luminance gradient, selected bit planes, median residual, ELA at qualities 90 and 75, and embedded-thumbnail comparison.
+- `filegrail photo PATH --out REPORT.html`: contact sheet, one plate per image, method coverage, separate fact, conflict and signal states. Images link from beside the page; `--embed` inlines them, `--image-budget` bounds them.
+- JPEG structure without dependencies: markers through EOI, encoding, sampling, quantization and Huffman tables, restart intervals, scans, comments, trailing bytes, IJG quality match or estimate.
+- EXIF follows IFD1, Interoperability and SubIFD directories, with bounds and cycle detection.
+- Maker notes as an evidence block for Canon, Nikon, Apple, Olympus, Panasonic and Reconyx: body and lens serial, lens model, shutter count, owner name, firmware, frame number, trail-camera event, Apple Live Photo identifier.
+- A preview carried in a maker note is read; one it only points at is reported.
+- Photographs cluster by camera body and, separately, by lens.
+- A maker note in the opposite byte order to its file is reported and its offsets are not followed.
+- A record says how many entries a maker note declared and why an unread one was skipped.
+- A scan bounds the content it reads out of carriers and names those it left closed.
+- `filegrail[photo]`: preview, histograms, luminance gradient, bit planes, median residual, ELA at 90 and 75, thumbnail comparison.
 
 ### Fixed
 
-- Finding the end of a JPEG entropy-coded scan reads the file in blocks rather than one byte at a time. That walk covers nearly every byte of a photograph and dominated the cost of analysing one.
-- A maker note value that does not decode as text no longer becomes a field. Decoding with replacement yields printable replacement characters, which used to reach a report as a lens name.
-- A field padded with null bytes at the front, which is where one vendor puts the padding, is read instead of coming back empty.
-- Entries written in a signed or floating field type are counted instead of being lost without a word.
+- The end of a JPEG entropy-coded scan is found in blocks, not one byte at a time.
+- A maker note value that does not decode as text no longer becomes a field.
+- A field padded with null bytes at the front is read instead of coming back empty.
+- Entries in signed and floating field types are counted.
 
 ### Security
 
-- Photo reports make no network request, under an explicit content security policy in either form. `--redact` omits every pixel-bearing preview and diagnostic, and individual decoder or diagnostic failures do not abort analysis of the remaining evidence.
+- Photo reports make no network request, under an explicit content security policy. `--redact` omits every pixel-bearing image; one failed diagnostic does not end the rest.
 
 ## 0.40.4 - 2026-09-19
 
