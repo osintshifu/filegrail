@@ -424,3 +424,59 @@ def test_a_note_that_names_a_preview_the_file_cannot_hold_says_so(tmp_path: Path
     assert record.fields["Vendor"] == "Konica Minolta"
     assert record.fields["Preview:Declared"] == "47355 bytes at offset 2019319 from the TIFF header"
     assert "not present in this file" in record.note
+
+
+def reconyx_note(serial: str, label: str, event: int, sequence: tuple[int, int]) -> bytes:
+    """A Reconyx trail camera's note: fixed binary fields, not a directory.
+
+    Every field sits at a known sixteen-bit word with no tag to find it by. The
+    serial is written two bytes to the character and the label beside it is not,
+    which is the kind of detail only a real camera settles.
+    """
+    note = bytearray(0x2B * 2 + 44)
+
+    def word(index: int, value: int) -> None:
+        struct.pack_into("<H", note, index * 2, value)
+
+    word(0x00, 0xF101)
+    for index, value in enumerate((3, 3, 0)):
+        word(0x01 + index, value)
+    word(0x06, ord("T"))
+    word(0x07, sequence[0])
+    word(0x08, sequence[1])
+    word(0x09, event >> 16)
+    word(0x0A, event & 0xFFFF)
+    # Seconds, minutes, hours, month, day, year, in that order.
+    for index, value in enumerate((0, 0, 10, 3, 16, 2020)):
+        word(0x0B + index, value)
+    note[0x15 * 2 : 0x15 * 2 + 30] = serial.encode("utf-16-le").ljust(30, b"\x00")
+    note[0x2B * 2 :] = label.encode("ascii").ljust(44, b"\x00")
+    return bytes(note)
+
+
+def test_a_note_that_is_a_fixed_structure_rather_than_a_directory_is_read(tmp_path: Path):
+    """A trail camera identifies itself here or nowhere.
+
+    Reconyx leaves `Make` empty, so the vendor block is the only thing in the
+    file that says what took the picture and the structure has to name itself.
+    It also numbers the event and the frame within it, which is what puts a
+    season of captures in order, and keeps its own clock reading beside the one
+    EXIF carries.
+    """
+    path = tmp_path / "trailcam.jpg"
+    jpeg_with_maker_note(
+        path, "", "HC500 HYPERFIRE", reconyx_note("H500EE06130468", "HC500 HYPERFIRE", 8, (2, 5))
+    )
+
+    tags = read_exif(path)
+
+    assert tags is not None and tags.maker is not None
+    notes = tags.maker
+    assert notes.vendor == "Reconyx"
+    assert notes.fields["SerialNumber"] == "H500EE06130468"
+    assert notes.fields["UserLabel"] == "HC500 HYPERFIRE"
+    assert notes.fields["FirmwareVersion"] == "3.3.0"
+    assert notes.fields["EventNumber"] == "8"
+    assert notes.fields["Sequence"] == "2 of 5"
+    assert notes.fields["TriggerMode"] == "time lapse"
+    assert notes.fields["DateTimeOriginal"] == "2020:03:16 10:00:00"

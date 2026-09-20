@@ -58,6 +58,21 @@ TIFF_RELATIVE = "offsets from the TIFF header"
 NOTE_RELATIVE = "offsets from the start of the note"
 NIKON_TIFF = "own TIFF header inside the note"
 IMAGE_ONLY = "an image rather than a directory"
+FIXED_STRUCTURE = "a fixed structure rather than a directory"
+
+#: Reconyx trail cameras write a structure instead of a directory: every field
+#: at a known sixteen-bit word, no tags and no offsets, and the version number
+#: it opens with is the only thing to recognise it by. These files carry no make
+#: of their own, so what the camera says about itself it says only here.
+_RECONYX_VERSION = 0xF101
+_RECONYX_LABEL = 0x2B
+_RECONYX_LENGTH = _RECONYX_LABEL * 2 + 44
+_RECONYX_SERIAL = 0x15
+_RECONYX_MOMENT = 0x0B
+
+#: What made the camera take the picture, which for a camera left in a wood is
+#: the difference between something walking past and a clock going off.
+_RECONYX_TRIGGER = {"T": "time lapse", "M": "motion detection", "P": "point and shoot"}
 
 #: Canon. The serial is a plain integer the body stamps on every frame; the
 #: owner name is typed in once by a person. `FileNumber` counts frames within a
@@ -195,6 +210,8 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         return _nikon(note)
     if note.startswith(b"FUJIFILM"):
         return _fujifilm(note)
+    if len(note) >= _RECONYX_LENGTH and _word(note, 0) == _RECONYX_VERSION:
+        return _reconyx(note)
 
     vendor = _vendor(make)
     for layout in _SIGNATURES:
@@ -322,6 +339,38 @@ def _fujifilm(note: bytes) -> MakerNotes | None:
     (first,) = struct.unpack_from("<I", note, 8)
     entries = _entries(note, first, "<", base=0, limit=len(note))
     return _notes("Fujifilm", NOTE_RELATIVE, entries, len(note), {}, "<")
+
+
+def _word(note: bytes, index: int) -> int:
+    """One of the sixteen-bit words a fixed structure is measured in."""
+    (value,) = struct.unpack_from("<H", note, index * 2)
+    return int(value)
+
+
+def _reconyx(note: bytes) -> MakerNotes:
+    """The HyperFire structure, read at the words the camera fixes it to.
+
+    `EventNumber` counts what tripped the camera and `Sequence` numbers the
+    frames within one trip, so together they place a photograph inside a
+    deployment. The clock reading is the camera's own and is kept beside the one
+    EXIF carries rather than merged with it: two readings that disagree are the
+    finding, and merging them would be the one thing that hides it.
+    """
+    moment = [_word(note, _RECONYX_MOMENT + step) for step in range(6)]
+    seconds, minutes, hours, month, day, year = moment
+    fields = {
+        "SerialNumber": _wide_text(note[_RECONYX_SERIAL * 2 : _RECONYX_SERIAL * 2 + 30]),
+        "UserLabel": _text(note[_RECONYX_LABEL * 2 : _RECONYX_LENGTH]),
+        "FirmwareVersion": ".".join(str(_word(note, index)) for index in (1, 2, 3)),
+        "EventNumber": str(_word(note, 0x09) * 0x10000 + _word(note, 0x0A)),
+        "Sequence": f"{_word(note, 0x07)} of {_word(note, 0x08)}",
+        "TriggerMode": _RECONYX_TRIGGER.get(chr(_word(note, 0x06))),
+        "DateTimeOriginal": (
+            f"{year:04d}:{month:02d}:{day:02d} {hours:02d}:{minutes:02d}:{seconds:02d}"
+        ),
+    }
+    named = {label: value for label, value in fields.items() if value}
+    return MakerNotes("Reconyx", FIXED_STRUCTURE, 0, len(note), named)
 
 
 def _image(note: bytes) -> EmbeddedPreview | None:
@@ -465,6 +514,12 @@ def _text(raw: bytes) -> str | None:
     the first null byte returns nothing for the one field that names the body.
     """
     value = raw.strip(b"\x00").split(b"\x00")[0].decode("utf-8", "replace").strip()
+    return value if value and value.isprintable() else None
+
+
+def _wide_text(raw: bytes) -> str | None:
+    """Text a vendor wrote two bytes to the character."""
+    value = raw.decode("utf-16-le", "replace").split("\x00")[0].strip()
     return value if value and value.isprintable() else None
 
 
