@@ -94,6 +94,14 @@ class SourceCoverage:
         return result
 
 
+#: How many bytes of carried content one scan may read out of its carriers.
+#: Every carrier is bounded on its own - so many members, so many bytes each -
+#: and a directory of carriers multiplies a bound that only ever applied to one
+#: of them. Checked between carriers, so the last one opened may pass it; a
+#: carrier left closed is named in coverage rather than passed over in silence.
+CARRIED_BUDGET = 1024 * 1024 * 1024
+
+
 @dataclass(slots=True)
 class ScanCoverage:
     """Sources and filesystem paths actually covered by one scan pass."""
@@ -103,6 +111,10 @@ class ScanCoverage:
     sources: dict[str, SourceCoverage] = field(default_factory=dict)
     unreadable: list[str] = field(default_factory=list)
     skipped_by_name: list[str] = field(default_factory=list)
+
+    #: Carriers whose contents were not read because the scan's allowance for
+    #: carried content was gone. The carriers themselves were scanned.
+    beyond_budget: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -114,6 +126,7 @@ class ScanCoverage:
             "unsearched": {
                 "unreadable": self.unreadable,
                 "skipped_by_name": self.skipped_by_name,
+                "beyond_budget": self.beyond_budget,
             },
         }
 
@@ -223,6 +236,7 @@ def scan(
     skip_names: bool = True,
     unsearched: Unsearched | None = None,
     coverage: ScanCoverage | None = None,
+    carried_budget: int | None = CARRIED_BUDGET,
 ) -> list[FileRecord]:
     """Build a FileRecord for every file under root.
 
@@ -231,6 +245,8 @@ def scan(
     guessing whether the tool failed.
     """
     root = root.resolve()
+    carried = 0
+    unopened: list[str] = []
     source_stats = stats if stats is not None else {}
     missed = unsearched if unsearched is not None else Unsearched()
     files = list(
@@ -322,7 +338,14 @@ def scan(
         record.evidence.extend(read_shortcuts(path, stat.st_size, shortcuts))
         records.append(record)
         if follow_archives:
-            records.extend(_member_records(record, path, hash_files))
+            if carried_budget is not None and carried >= carried_budget:
+                # Scanned itself, not looked inside. Named so the reader knows
+                # which carriers are still to be read, and can come back.
+                unopened.append(str(path))
+            else:
+                children = _member_records(record, path, hash_files)
+                carried += sum(child.size for child in children)
+                records.extend(children)
 
     if follow_archives:
         _attach_archive_records(records, downloads, downloads_by_name)
@@ -334,6 +357,7 @@ def scan(
         coverage.files_scanned = sum(1 for record in records if record.parent is None)
         coverage.unreadable = list(dict.fromkeys(missed.unreadable))
         coverage.skipped_by_name = list(dict.fromkeys(missed.by_name))
+        coverage.beyond_budget = unopened
         coverage.sources = {
             "file-evidence": SourceCoverage(
                 PARTIAL if len(records) != len(files) else SEARCHED,

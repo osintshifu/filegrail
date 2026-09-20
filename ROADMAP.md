@@ -102,7 +102,7 @@ Implemented in part. An evidence record names the archive member, the package pa
 
 ### Files inside files
 
-Implemented. A file carried inside another is a file of its own: an archive member, an attachment in a message, a file attached to a PDF and an object packaged in an Office document, each with its own evidence, the carrier as its parent and a membership relationship in the graph. The number of files opened per carrier and the size of each are bounded, and a carrier is read one level deep. Still to come: a budget for the total work of a scan, and reading what a carried file itself carries.
+Implemented. A file carried inside another is a file of its own: an archive member, an attachment in a message, a file attached to a PDF and an object packaged in an Office document, each with its own evidence, the carrier as its parent and a membership relationship in the graph. The number of files opened per carrier and the size of each are bounded, a scan has an allowance for carried content and names every carrier it left closed once that allowance is gone, and a carrier is read one level deep. Still to come: reading what a carried file itself carries.
 
 ### Content Credentials in every container that carries them
 

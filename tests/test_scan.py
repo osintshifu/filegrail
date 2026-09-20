@@ -102,7 +102,11 @@ def test_coverage_records_what_the_scan_actually_read(tmp_path: Path):
     }
     assert document["sources"]["shell-history"]["state"] == "disabled"
     assert document["sources"]["archives"]["state"] == "disabled"
-    assert document["unsearched"] == {"unreadable": [], "skipped_by_name": []}
+    assert document["unsearched"] == {
+        "unreadable": [],
+        "skipped_by_name": [],
+        "beyond_budget": [],
+    }
 
 
 def test_noise_directories_are_skipped(tmp_path: Path):

@@ -8,6 +8,7 @@ are the two ceilings that apply to the whole of it.
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 
@@ -59,3 +60,45 @@ def test_a_photo_report_stops_producing_images_once_its_budget_is_spent(tmp_path
         method.name == "Pixel diagnostics" and "budget" in method.detail
         for method in skipped.methods
     )
+
+
+def archive_of_photographs(path: Path, count: int) -> None:
+    """A zip whose members are readable photographs, so reading them costs."""
+    with zipfile.ZipFile(path, "w") as package:
+        for index in range(count):
+            member = path.parent / f"{path.stem}-{index}.jpg"
+            photograph(member)
+            package.write(member, f"inside/{index}.jpg")
+            member.unlink()
+
+
+def test_a_scan_stops_opening_carriers_once_its_budget_is_spent(tmp_path: Path):
+    """The work of a scan is the number of carriers times the work of each.
+
+    A directory of archives multiplies a bound that only ever applied to one of
+    them. When the allowance for carried content is gone the remaining carriers
+    are left closed and named, so the reader knows what was not looked inside
+    and can come back to it.
+    """
+    from filegrail.scan import ScanCoverage, scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("one.zip", "two.zip", "three.zip"):
+        archive_of_photographs(case / name, 2)
+
+    coverage = ScanCoverage()
+    records = scan(
+        case,
+        use_shell_history=False,
+        home=tmp_path / "empty",
+        coverage=coverage,
+        carried_budget=1,
+    )
+
+    opened = {record.parent for record in records if record.parent is not None}
+
+    assert len(opened) == 1
+    assert len(coverage.beyond_budget) == 2
+    # The carriers themselves are still scanned; only their contents are not.
+    assert sum(1 for record in records if record.parent is None) == 3
