@@ -562,14 +562,26 @@ def _text(raw: bytes) -> str | None:
     conventionally at the end. Panasonic puts it at the front, so stopping at
     the first null byte returns nothing for the one field that names the body.
     """
-    value = raw.strip(b"\x00").split(b"\x00")[0].decode("utf-8", "replace").strip()
-    return value if value and value.isprintable() else None
+    return _printable(raw.strip(b"\x00").split(b"\x00")[0].decode("utf-8", "replace"))
 
 
 def _wide_text(raw: bytes) -> str | None:
     """Text a vendor wrote two bytes to the character."""
-    value = raw.decode("utf-16-le", "replace").split("\x00")[0].strip()
-    return value if value and value.isprintable() else None
+    return _printable(raw.decode("utf-16-le", "replace").split("\x00")[0])
+
+
+def _printable(value: str) -> str | None:
+    """The value, if it reads as text somebody wrote.
+
+    Decoding with replacement never fails, and the replacement character is
+    itself printable, so a printability test alone lets four bytes of binary
+    through as a lens name. A field is read as itself or not at all: no value is
+    a true answer where mojibake is not.
+    """
+    value = value.strip()
+    if not value or "�" in value or not value.isprintable():
+        return None
+    return value
 
 
 def _file_number(raw: bytes, kind: int, endian: str) -> str | None:

@@ -577,3 +577,24 @@ def test_every_field_type_tiff_allows_is_counted(tmp_path: Path):
     assert "1 entry this reader could not read" in record.note
     assert "dropped" not in record.note
     assert record.fields == {"Vendor": "Canon", "FileNumber": "124-2489"}
+
+
+def test_bytes_that_are_not_text_do_not_become_a_text_field(tmp_path: Path):
+    """A named field is read as text; the entry does not promise to hold any.
+
+    Canon writes its lens name at tag 0x0095 as a string. A note where the same
+    tag holds four bytes of something else - a rewritten block, a vendor reusing
+    the number - decodes to replacement characters, and those are printable, so
+    a reader that only checks for printability publishes them as the lens. The
+    field has to be absent instead: no name is a true answer and mojibake is not.
+    """
+    from filegrail.sources.embedded import read_maker_notes
+
+    note, _values = ifd([(0x0095, 2, b"\xff\xfe\xfd\xfc")], ">", value_base=0)
+    path = tmp_path / "canon.jpg"
+    jpeg_with_maker_note(path, "Canon", "Canon EOS 40D", note)
+
+    record = read_maker_notes(path)
+
+    assert record is not None
+    assert "LensModel" not in record.fields
