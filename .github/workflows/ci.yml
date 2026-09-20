@@ -23,7 +23,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        # The photo extra is here because the matrix is what says whether a
+        # commit works, and a feature only some of it exercises is a feature
+        # nothing says that about.
+        run: python -m pip install -e ".[dev,photo]"
       - name: Ruff
         run: |
           ruff check .
