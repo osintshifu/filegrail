@@ -106,6 +106,18 @@ def test_reads_16_bit_quantization_table(tmp_path: Path):
     assert found.quality is None
 
 
+def test_marks_nonstandard_quantization_as_nearest_estimate(tmp_path: Path):
+    photo = tmp_path / "nonstandard-quality.jpg"
+    dqt = bytes((0,)) + bytes((2,)) * 64
+    photo.write_bytes(b"\xff\xd8" + _segment(0xDB, dqt) + b"\xff\xd9")
+
+    found = analyse_jpeg(photo)
+
+    assert found is not None
+    assert found.quality is not None
+    assert (found.quality.quality, found.quality.exact, found.quality.distance) == (99, False, 42)
+
+
 def test_reads_multiple_progressive_scans(tmp_path: Path):
     photo = tmp_path / "multiscan.jpg"
     scan = _segment(0xDA, b"\x01\x01\x00\x00\x00\x00")

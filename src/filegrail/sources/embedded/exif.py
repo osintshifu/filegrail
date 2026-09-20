@@ -63,6 +63,8 @@ GPS_DATESTAMP = 0x001D
 #: timestamp is independent of the camera clock, so a disagreement between them
 #: is itself a finding.
 TAG_NAMES = {
+    0x0100: "ImageWidth",
+    0x0101: "ImageLength",
     0x010E: "ImageDescription",
     0x010F: "Make",
     0x0110: "Model",
@@ -82,6 +84,8 @@ TAG_NAMES = {
     0x9286: "UserComment",
     0x9290: "SubSecTime",
     0x9291: "SubSecTimeOriginal",
+    0xA002: "ExifImageWidth",
+    0xA003: "ExifImageHeight",
     0xA404: "DigitalZoomRatio",
     0xA405: "FocalLengthIn35mmFilm",
     0xA430: "CameraOwnerName",
