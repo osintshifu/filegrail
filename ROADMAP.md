@@ -106,7 +106,7 @@ Implemented. A file carried inside another is a file of its own: an archive memb
 
 ### Content Credentials in every container that carries them
 
-Implemented. C2PA manifests are read from TIFF and the raw formats built on it, WebP, WAV and AVI, MP4, MOV, M4A, HEIF and AVIF, and MP3, and the record says which structure carried the manifest. Ingredients and actions are read, and a declared AI source from a C2PA action or the IPTC digital source type is reported as a declaration, never a verdict about the content. The claim signature stays unverified and the report says so. The hard binding used by MP4 and MOV is not computed.
+Implemented. C2PA manifests are read from TIFF and the raw formats built on it, WebP, WAV and AVI, MP4, MOV, M4A, HEIF and AVIF, MP3 and SVG, and the record says which structure carried the manifest. Ingredients and actions are read, and a declared AI source from a C2PA action or the IPTC digital source type is reported as a declaration, never a verdict about the content. The claim signature stays unverified and the report says so. The hard binding used by MP4 and MOV is not computed.
 
 ### Deeper Office and PDF evidence
 
