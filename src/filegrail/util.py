@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -28,6 +29,29 @@ _DARWIN_GETXATTR = (
     ctypes.c_uint32,
     ctypes.c_int,
 )
+
+
+@dataclass
+class Allowance:
+    """What is left of a scan's allowance for reading what files carry.
+
+    Opening a carrier is the one cost of a scan the tree does not show: a
+    directory of small archives can hold more than the disk it sits on. Held by
+    the scan and handed to the readers, so what is counted is the bytes actually
+    extracted, whether or not the member turned out to carry evidence. Counting
+    only the members that produced evidence would let a thousand archives of
+    unreadable content pass the allowance untouched, which is what happened.
+    """
+
+    limit: int | None = None
+    used: int = 0
+
+    @property
+    def spent(self) -> bool:
+        return self.limit is not None and self.used >= self.limit
+
+    def take(self, size: int) -> None:
+        self.used += size
 
 
 def xattrs_readable() -> bool:

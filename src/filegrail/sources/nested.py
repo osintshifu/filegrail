@@ -22,6 +22,7 @@ import zlib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from ..util import Allowance
 from .archives import _MAX_MEMBER_BYTES, _MAX_READ, Member, _zip_time, read_member
 from .embedded.documents import (
     OOXML_SUFFIXES,
@@ -45,7 +46,9 @@ Carried = tuple[str, bytes, "str | None"]
 _Lister = Callable[[bytes], Iterable[Carried]]
 
 
-def read_children(path: Path, *, hashing: bool = False) -> list[Member]:
+def read_children(
+    path: Path, *, hashing: bool = False, carried: Allowance | None = None
+) -> list[Member]:
     """The files carried inside `path` that a reader had something to say about."""
     lister = _lister(path.suffix.lower())
     if lister is None:
@@ -63,6 +66,10 @@ def read_children(path: Path, *, hashing: bool = False) -> list[Member]:
         for opened, (name, raw, mtime) in enumerate(lister(data)):
             if opened >= _MAX_READ:
                 break
+            if carried is not None:
+                if carried.spent:
+                    break
+                carried.take(len(raw))
             if len(raw) > _MAX_MEMBER_BYTES:
                 continue
             evidence = read_member(name, raw)

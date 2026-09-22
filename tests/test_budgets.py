@@ -109,3 +109,33 @@ def test_a_scan_stops_opening_carriers_once_its_budget_is_spent(tmp_path: Path):
     assert len(coverage.beyond_budget) == 2
     # The carriers themselves are still scanned; only their contents are not.
     assert sum(1 for record in records if record.parent is None) == 3
+
+
+def test_the_scan_allowance_counts_what_was_extracted_not_what_carried_evidence(tmp_path: Path):
+    """The allowance bounds decompression, which happens before anything is read.
+
+    A member is extracted, then offered to the readers, then kept only if one of
+    them had something to say. Charging for the ones that were kept leaves the
+    work of the rest uncounted, so a directory of archives holding nothing this
+    tool reads passes an allowance of any size without touching it.
+    """
+    from filegrail.scan import ScanCoverage, scan
+
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("one.zip", "two.zip", "three.zip"):
+        with zipfile.ZipFile(case / name, "w", zipfile.ZIP_DEFLATED) as bundle:
+            bundle.writestr("unreadable.bin", b"x" * 4096)
+
+    coverage = ScanCoverage()
+    records = scan(
+        case,
+        use_shell_history=False,
+        home=tmp_path / "empty",
+        coverage=coverage,
+        carried_budget=1,
+    )
+
+    # Nothing inside is evidence, so nothing inside becomes a record either way.
+    assert not [record for record in records if record.parent is not None]
+    assert len(coverage.beyond_budget) == 2

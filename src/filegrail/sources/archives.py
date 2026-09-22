@@ -31,7 +31,7 @@ from functools import partial
 from pathlib import Path
 
 from ..models import CONTAINER_MEMBER, EvidenceRecord
-from ..util import iso
+from ..util import Allowance, iso
 from .c2pa import read_c2pa_manifest
 from .embedded import SUFFIXES, read_embedded_metadata
 from .iptc import read_iptc
@@ -112,7 +112,9 @@ class Member:
     evidence: list[EvidenceRecord]
 
 
-def read_members(path: Path, *, hashing: bool = False) -> list[Member]:
+def read_members(
+    path: Path, *, hashing: bool = False, carried: Allowance | None = None
+) -> list[Member]:
     """The members of the archive that carry evidence, each read as a file.
 
     Read under its own name, with its own size and time, so what a member says
@@ -127,10 +129,18 @@ def read_members(path: Path, *, hashing: bool = False) -> list[Member]:
             for opened, (name, size, mtime, extract) in enumerate(archive):
                 if opened >= _MAX_READ:
                     break
+                if carried is not None and carried.spent:
+                    # One archive can hold more than the whole scan's allowance,
+                    # so it is checked here and not only between carriers.
+                    break
                 try:
                     raw = extract()
                 except (*_UNREADABLE, RuntimeError):
                     continue
+                # Charged for the bytes that came out, not for the ones that went
+                # on to say something: decompressing is the work being bounded.
+                if carried is not None:
+                    carried.take(len(raw))
                 evidence = read_member(name, raw)
                 if not evidence:
                     continue

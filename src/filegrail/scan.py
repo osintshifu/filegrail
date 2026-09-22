@@ -40,7 +40,7 @@ from .sources import (
     read_trash,
     read_xmp,
 )
-from .util import basename, birth_time, iso, sha256_file
+from .util import Allowance, basename, birth_time, iso, sha256_file
 
 #: Directory names a scan does not descend into. They hold build output, caches
 #: and vendored copies - thousands of files that say nothing about how anything
@@ -245,7 +245,7 @@ def scan(
     guessing whether the tool failed.
     """
     root = root.resolve()
-    carried = 0
+    carried = Allowance(carried_budget)
     unopened: list[str] = []
     source_stats = stats if stats is not None else {}
     missed = unsearched if unsearched is not None else Unsearched()
@@ -338,14 +338,12 @@ def scan(
         record.evidence.extend(read_shortcuts(path, stat.st_size, shortcuts))
         records.append(record)
         if follow_archives:
-            if carried_budget is not None and carried >= carried_budget:
+            if carried.spent:
                 # Scanned itself, not looked inside. Named so the reader knows
                 # which carriers are still to be read, and can come back.
                 unopened.append(str(path))
             else:
-                children = _member_records(record, path, hash_files)
-                carried += sum(child.size for child in children)
-                records.extend(children)
+                records.extend(_member_records(record, path, hash_files, carried))
 
     if follow_archives:
         _attach_archive_records(records, downloads, downloads_by_name)
@@ -394,7 +392,9 @@ def scan(
     return records
 
 
-def _member_records(archive: FileRecord, path: Path, hash_files: bool) -> list[FileRecord]:
+def _member_records(
+    archive: FileRecord, path: Path, hash_files: bool, carried: Allowance
+) -> list[FileRecord]:
     """The files inside a carrier that carry evidence, each a record of its own.
 
     A member's origin is the carrier's, inherited as such: it arrived inside
@@ -404,9 +404,11 @@ def _member_records(archive: FileRecord, path: Path, hash_files: bool) -> list[F
     message is an embedded file, and its record says which.
     """
     if is_archive(path):
-        members, source = read_members(path, hashing=hash_files), "archive-member"
+        members = read_members(path, hashing=hash_files, carried=carried)
+        source = "archive-member"
     else:
-        members, source = read_children(path, hashing=hash_files), "embedded-file"
+        members = read_children(path, hashing=hash_files, carried=carried)
+        source = "embedded-file"
     origins = [found for found in archive.evidence if category(found) == ORIGIN]
     leading = max(origins, key=lambda found: found.priority) if origins else None
     children = []
