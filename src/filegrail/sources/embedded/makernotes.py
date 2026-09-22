@@ -271,10 +271,11 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         note_endian,
         base=0,
         limit=len(data),
-        # An offset inside a note whose byte order was not rewritten addresses
-        # the file as it stood before the rewrite. Whatever lies there now is
-        # not the value, so only what fits inside an entry is believed.
-        trust_offsets=byte_order == SAME_ORDER,
+        # An offset inside a note whose byte order was not rewritten, or whose
+        # values no longer sit where its own structure puts them, addresses the
+        # file as it stood before the rewrite. Whatever lies there now is not
+        # the value, so only what fits inside an entry is believed.
+        trust_offsets=byte_order == SAME_ORDER and not _displaced(data, at, note_endian),
     )
     return _notes(
         vendor,
@@ -286,6 +287,50 @@ def read(data: Raw, at: int, size: int, endian: str, make: str | None) -> MakerN
         byte_order,
         declared=_declared_preview(entries, note_endian),
     )
+
+
+def _displaced(data: Raw, at: int, endian: str) -> bool:
+    """Whether a directory's offsets address a place its values no longer occupy.
+
+    A directory's values follow its entries: the two bytes of the count, twelve
+    for each entry, and four for the pointer to the next directory. When the
+    lowest offset the entries use is not that position, the block was moved
+    after those offsets were written and every one of them is stale by the same
+    distance. The three intact Canon notes in the corpus put the first value
+    exactly there; the two exiftool warns about, by 54 and 128 bytes, do not.
+
+    What lies at a stale offset is some other part of the file, and a name read
+    from it would be this reader's invention rather than the camera's record.
+    Recovering the true position is a separate matter: the distance is not a
+    plain shift of the values, and guessing at one manufactures evidence.
+    """
+    try:
+        count = int(struct.unpack_from(endian + "H", data, at)[0])
+    except struct.error:
+        return False
+    if count == 0 or count > _MAX_ENTRIES:
+        return False
+    lowest: int | None = None
+    for index in range(count):
+        entry = at + 2 + index * 12
+        try:
+            _, kind, length = struct.unpack_from(endian + "HHI", data, entry)
+        except struct.error:
+            return False
+        width = _WIDTHS.get(kind)
+        if width is None or length == 0 or width * length <= 4:
+            continue
+        try:
+            (offset,) = struct.unpack_from(endian + "I", data, entry + 8)
+        except struct.error:
+            return False
+        lowest = int(offset) if lowest is None else min(lowest, int(offset))
+    # A note whose every value fits inside an entry uses no offset to be stale,
+    # and a zero offset is not a position at all but a field left unset, which
+    # is this reader's limit rather than evidence that anything moved.
+    if lowest is None or lowest == 0:
+        return False
+    return lowest != at + 2 + count * 12 + 4
 
 
 def _declared_preview(directory: _Directory, endian: str) -> tuple[int, int] | None:

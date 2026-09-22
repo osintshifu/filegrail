@@ -603,3 +603,38 @@ def test_bytes_that_are_not_text_do_not_become_a_text_field(tmp_path: Path):
 
     assert record is not None
     assert "LensModel" not in record.fields
+
+
+def test_a_note_whose_values_moved_yields_no_addressed_field():
+    """A note that was moved keeps offsets describing where it used to be.
+
+    Its values follow its entries, so the first of them sits a fixed distance
+    from the directory's own start. When it does not, the block was relocated
+    after those offsets were written and each one is stale by that distance.
+    Whatever lies there now belongs to some other part of the file, and reading
+    a name out of it would be this reader's invention. Exiftool warns of exactly
+    this on two files of the local corpus, by 54 and 128 bytes.
+
+    Built as a TIFF block rather than a whole JPEG because the point is where
+    the note sits inside one, which a file's own layout decides.
+    """
+    from filegrail.sources.embedded import makernotes
+
+    owner = b"Jean-Pierre Grignon\x00"
+    entries = [(0x0008, 4, struct.pack(">I", 1242489)), (0x0009, 2, owner)]
+    at = 8
+    settled = at + 2 + len(entries) * 12 + 4
+
+    readings = {}
+    for label, base in (("intact", settled), ("moved", settled + 24)):
+        directory, values = ifd(entries, ">", value_base=base)
+        note = directory + values
+        data = b"MM\x00\x2a" + struct.pack(">I", at) + note
+        found = makernotes.read(data, at, len(note), ">", "Canon")
+        assert found is not None
+        readings[label] = found
+
+    assert readings["intact"].fields["OwnerName"] == "Jean-Pierre Grignon"
+    # The four-byte value sits inside its entry, so no offset can make it stale.
+    assert readings["moved"].fields == {"FileNumber": "124-2489"}
+    assert readings["moved"].distrusted == 1
