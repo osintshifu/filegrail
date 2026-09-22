@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import BinaryIO
 
 from .preview import jpeg_dimensions
+from .redact import redact_text
 
 _MAX_SEGMENTS = 8192
 _MAX_TABLES = 32
@@ -97,6 +98,16 @@ class JpegAnalysis:
     eoi_offset: int | None
     trailing_bytes: int
     quality: QualityEstimate | None
+
+    def redacted(self) -> JpegAnalysis:
+        """The same analysis with the text the file carried put through redaction.
+
+        A comment is free text a camera or an editor wrote, so it can hold what
+        any other free text can, and it reaches the report as written. Named the
+        same as `EvidenceRecord.redacted` because it answers for the same promise.
+        Everything else here is measured rather than quoted.
+        """
+        return replace(self, comments=tuple(redact_text(value) for value in self.comments))
 
 
 def jpeg_size(data: bytes) -> tuple[int, int] | None:

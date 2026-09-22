@@ -170,3 +170,25 @@ def test_integrates_optional_pixel_artifacts(tmp_path: Path, monkeypatch):
     assert result.methods[-1].detail == "7 derived maps produced"
     assert "main-preview" in {item.key for item in result.artifacts}
     assert "embedded-preview-comparison" in {item.key for item in result.artifacts}
+
+
+def test_redaction_covers_the_text_a_jpeg_carries(tmp_path: Path):
+    """A comment is free text the file carries, so it can hold what any free text can.
+
+    The evidence records go through redaction and the structural analysis quotes
+    the file as well, in a segment a camera or an editor is free to write into.
+    Both answer for the same promise.
+    """
+    secret = "Authorization: Bearer 0123456789abcdef0123456789abcdef"
+    data = _photo_bytes()
+    comment = b"\xff\xfe" + (len(secret) + 2).to_bytes(2, "big") + secret.encode()
+    photo = tmp_path / "commented.jpg"
+    photo.write_bytes(data[:2] + comment + data[2:])
+
+    plain = analyse_photos([_record(photo)], tmp_path).photos[0]
+    hidden = analyse_photos([_record(photo)], tmp_path, redact=True).photos[0]
+
+    assert plain.jpeg is not None and hidden.jpeg is not None
+    # Read at all, or the test proves nothing about hiding it.
+    assert plain.jpeg.comments == (secret,)
+    assert secret not in " ".join(hidden.jpeg.comments)

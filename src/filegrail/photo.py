@@ -374,6 +374,10 @@ def _analyse_photo(
 
     budget.take(artifacts)
     evidence = tuple(record.redacted().evidence if redact else record.evidence)
+    # The structural analysis quotes the file's own comments, so it answers for
+    # the same promise the evidence records do and is redacted with them.
+    if redact and jpeg is not None:
+        jpeg = jpeg.redacted()
     camera = exif.camera(tags) if tags else _evidence_value(evidence, "Make", "Model")
     # A camera that fills the standard tag is the exception. `SerialNumber` and
     # `InternalSerialNumber` come from the vendor block, which is where most
