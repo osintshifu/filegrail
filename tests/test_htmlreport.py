@@ -465,3 +465,25 @@ def test_a_graph_node_that_is_a_shared_pivot_links_to_its_pivot_row():
 
     assert re.search(r'data-graph-node="[^"]+" [^>]*data-pivot-link="#P\d\d"', page)
     assert "P01" in ids and targets <= set(ids)
+
+
+def test_the_report_does_not_let_a_derived_relationship_read_as_an_observation():
+    """An address and its domain were never written together anywhere. The
+    relationship holds, but it was worked out rather than found, and a reader
+    comparing it against evidence read from a file has to be able to see that."""
+    from filegrail.identify import Identifier
+
+    record = _file(
+        "note.txt",
+        EvidenceRecord(source="document-metadata", fields={"Author": "ann@example.org"}),
+    )
+    found = [
+        Identifier(type="email", value="ann@example.org", normalized="ann@example.org"),
+        Identifier(type="domain", value="example.org", normalized="example.org"),
+    ]
+
+    page = render_html(analyse([record], Path("/case")), identifiers=found)
+
+    assert "rel-proof derived" in page
+    assert "not observed, derived" in page
+    assert "email-host" in page

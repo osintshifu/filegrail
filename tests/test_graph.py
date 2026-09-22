@@ -373,3 +373,26 @@ def test_graphml_names_its_nodes_and_types_its_edges():
     assert '<data key="labels">:CameraModel</data>' in page
     assert '<data key="label">CAMERA_MODEL</data>' in page
     assert '<data key="weight">3.0</data>' in page
+
+
+def test_a_derived_relationship_shows_its_working():
+    """`source: derived` says a relationship was not observed, but not why it
+    holds. Without the rule and the value it was applied to, a reader cannot
+    check it, and an export cannot tell it apart from something found in a
+    file."""
+    from filegrail.graph import build_graph
+    from filegrail.identify import Identifier
+
+    graph = build_graph(
+        [],
+        [
+            Identifier(type="email", value="ann@example.org", normalized="ann@example.org"),
+            Identifier(type="domain", value="example.org", normalized="example.org"),
+        ],
+    )
+
+    edge = next(item for item in graph.relationships if item.kind == "email domain")
+    assert edge.evidence[0].to_dict()["derived"] == {
+        "rule": "email-host",
+        "premise": "ann@example.org",
+    }

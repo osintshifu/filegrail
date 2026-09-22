@@ -67,7 +67,15 @@ class Node:
 
 @dataclass(frozen=True, slots=True)
 class RelationshipEvidence:
-    """Why one relationship is present in the graph."""
+    """Why one relationship is present in the graph.
+
+    Most of these are observations: a reader found a value in a place inside a
+    file. A few are not. A relationship between an address and its domain was
+    never written anywhere - it follows from the value itself. Saying only
+    `derived` leaves a reader unable to check it, so a derived record names the
+    rule that was applied and the value it was applied to. The two kinds must
+    not be told apart by eye, and here they are told apart by a field.
+    """
 
     source: str
     place: str
@@ -76,6 +84,8 @@ class RelationshipEvidence:
     category: str | None = None
     match: str | None = None
     at: str | None = None
+    rule: str | None = None
+    premise: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -90,6 +100,8 @@ class RelationshipEvidence:
             data["match"] = {"method": self.match}
         if self.at is not None:
             data["at"] = self.at
+        if self.rule is not None:
+            data["derived"] = {"rule": self.rule, "premise": self.premise}
         return data
 
 
@@ -411,29 +423,63 @@ def _derived_values(
         if identifier.of is not None:
             target = by_value.get(("email", identifier.of))
             if target is not None:
-                relationships.append(_derived(source, target, DIGEST_OF, "digest equality"))
+                relationships.append(
+                    _derived(
+                        source,
+                        target,
+                        DIGEST_OF,
+                        "digest equality",
+                        DIGEST_EQUALITY,
+                        identifier.normalized,
+                    )
+                )
 
         if identifier.type == "email":
             host = identifier.normalized.rpartition("@")[2]
             target = by_value.get(("domain", host))
             if target is not None:
-                relationships.append(_derived(source, target, EMAIL_DOMAIN, "email host"))
+                relationships.append(
+                    _derived(
+                        source,
+                        target,
+                        EMAIL_DOMAIN,
+                        "email host",
+                        EMAIL_HOST,
+                        identifier.normalized,
+                    )
+                )
 
         if identifier.type == "url":
             parsed = normalize_url(identifier.normalized)
             url_host = parsed[1] if parsed else None
             target = by_value.get(("domain", url_host)) if url_host else None
             if target is not None:
-                relationships.append(_derived(source, target, URL_HOST, "URL host"))
+                relationships.append(
+                    _derived(
+                        source, target, URL_HOST, "URL host", URL_HOSTNAME, identifier.normalized
+                    )
+                )
     return relationships
 
 
-def _derived(source: str, target: str, kind: str, place: str) -> Relationship:
+#: The rules that read a relationship out of a value rather than out of a file.
+#: Each is named so a reader can check it, and so two runs name it the same way.
+DIGEST_EQUALITY = "digest-equality"
+EMAIL_HOST = "email-host"
+URL_HOSTNAME = "url-hostname"
+
+
+def _derived(
+    source: str, target: str, kind: str, place: str, rule: str, premise: str
+) -> Relationship:
+    """A relationship the values themselves carry, with the working shown."""
     evidence = RelationshipEvidence(
         source="derived",
         place=place,
         corpus="derived",
         count=1,
+        rule=rule,
+        premise=premise,
     )
     return Relationship(source, target, kind, 1, (evidence,))
 

@@ -12,6 +12,8 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - **The CSV edge list has different columns.** `source_id` and `target_id` are now `source` and `target`, `source_value` and `target_value` are now `source_label` and `target_label`, and `count` is now `weight`. A reader that names its columns keeps working; one that reads them by position does not.
 - What the scan was no longer repeats in every row. It made up 70% of the file and belongs to the run, not to a relationship. With `-o FILE` it is written to `FILE.meta.json` beside the table, and `--json` carries it in full.
 - Each row gives the evidence as columns a graph tool can filter on, beside the complete record it already carried.
+- A derived relationship names the rule that produced it and the value the rule was applied to. Saying only that it was derived left a reader unable to check it.
+- The report marks a derived relationship, so it cannot be read as something found in a file.
 
 ## 0.44.0 - 2026-09-23
 

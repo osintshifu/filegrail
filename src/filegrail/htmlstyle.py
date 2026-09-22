@@ -418,6 +418,8 @@ margin-left:2px}
 .relationship details{min-width:18em}
 .rel-proof{padding:8px 0;border-bottom:1px solid var(--line)}
 .rel-proof:last-child{border-bottom:0}
+.rel-proof.derived{border-left:2px solid var(--line);padding-left:10px}
+.rel-derived{display:inline-block;margin-bottom:6px;font-size:var(--t-small);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .rel-proof .fields{grid-template-columns:minmax(80px,max-content) 1fr;margin-top:0}
 .relationship-table-tools{display:none;flex:1;align-items:center;gap:10px;flex-wrap:wrap}
 .relationship-table-tools .btn{height:34px}

@@ -145,6 +145,7 @@ def render_graph_csv(
         "evidence_place",
         "evidence_category",
         "evidence_match",
+        "evidence_rule",
         "evidence_at",
         "evidence",
     )
@@ -170,6 +171,7 @@ def render_graph_csv(
                 "evidence_place": _joined(item.place for item in found),
                 "evidence_category": _joined(item.category or "" for item in found),
                 "evidence_match": _joined(item.match or "" for item in found),
+                "evidence_rule": _joined(item.rule or "" for item in found),
                 "evidence_at": min((item.at for item in found if item.at), default=""),
                 "evidence": json.dumps(
                     [item.to_dict() for item in found],

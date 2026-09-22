@@ -1164,7 +1164,17 @@ def _relationship_evidence(edge: Relationship) -> str:
             facts.append(("time", proof.at))
         if proof.count != 1:
             facts.append(("occurrences", f"{proof.count:,}"))
-        proofs.append(f'<div class="rel-proof">{_fields(facts)}</div>')
+        # A derived relationship was never written in any file: it follows from
+        # the value. It is marked so it cannot be read as an observation, and it
+        # says which rule was applied to what.
+        derived = proof.rule is not None
+        if derived:
+            facts.append(("rule", proof.rule or ""))
+            facts.append(("premise", proof.premise or ""))
+        mark = ' <span class="rel-derived">not observed, derived</span>' if derived else ""
+        proofs.append(
+            f'<div class="rel-proof{" derived" if derived else ""}">{mark}{_fields(facts)}</div>'
+        )
     count = len(proofs)
     label = "evidence item" if count == 1 else "evidence items"
     return f"<details><summary>{count:,} {label}</summary>{''.join(proofs)}</details>"
