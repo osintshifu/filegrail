@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import struct
 import zlib
@@ -107,6 +108,27 @@ def _png_with(path: Path, jumbf: bytes) -> tuple[int, int]:
     manifest_chunk = chunk(b"caBX", jumbf)
     path.write_bytes(header + manifest_chunk + chunk(b"IDAT", b"\x00") + chunk(b"IEND", b""))
     return len(header), len(manifest_chunk)
+
+
+def _svg_with(path: Path, jumbf: bytes) -> None:
+    """A drawing carrying the same manifest store, written the way XML can."""
+    payload = base64.b64encode(jumbf).decode()
+    path.write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:c2pa="http://c2pa.org/manifest">'
+        f"<metadata><c2pa:manifest>{payload}</c2pa:manifest></metadata>"
+        '<path d="M0 0 L1 1"/></svg>',
+        encoding="utf-8",
+    )
+
+
+def test_reads_a_manifest_an_svg_carries_as_base64(tmp_path: Path):
+    drawing = tmp_path / "mark.svg"
+    _svg_with(drawing, _manifest(GENERATED_CLAIM))
+
+    record = read_c2pa_manifest(drawing)
+
+    assert record is not None
+    assert record.where == {"object": "c2pa:manifest element"}
 
 
 def test_reads_an_ai_generated_png(tmp_path: Path):

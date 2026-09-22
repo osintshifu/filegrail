@@ -19,6 +19,7 @@ Removing the fields is removing the fields.
 from __future__ import annotations
 
 import io
+import re
 import struct
 import tempfile
 import zipfile
@@ -297,15 +298,16 @@ def _jpeg_block(marker: int, payload: bytes) -> str:
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 #: PNG chunks that carry metadata. The three text chunks hold whatever a
-#: generator wrote there, `eXIf` an Exif block, and `tIME` the last-modified
-#: moment. Everything else - the header, the palette, the image data, the
-#: transparency and colour chunks - is the picture.
+#: generator wrote there, `eXIf` an Exif block, `tIME` the last-modified moment
+#: and `caBX` a C2PA manifest. Everything else - the header, the palette, the
+#: image data, the transparency and colour chunks - is the picture.
 _PNG_STRIPPED = {
     b"tEXt": "png-text",
     b"zTXt": "png-text",
     b"iTXt": "png-text",
     b"eXIf": "exif",
     b"tIME": "modification time",
+    b"caBX": "c2pa",
 }
 
 
@@ -338,6 +340,69 @@ def _strip_png(raw: bytes) -> tuple[bytes, list[str]]:
             break
 
     return b"".join(kept), removed
+
+
+# --- SVG ---------------------------------------------------------------------
+
+#: How far into a file the root element has to appear for it to be a drawing.
+#: A comment, a declaration and a doctype can all stand in front of it.
+_SVG_SNIFF = 8192
+
+_SVG_ROOT = re.compile(rb"<svg\b", re.IGNORECASE)
+
+#: What an SVG holds besides the drawing. `metadata` is where RDF, Dublin Core
+#: and a C2PA manifest are written; an XMP packet can also stand on its own
+#: between processing instructions; and a comment is where an editor signs its
+#: work. Shapes, paths, groups, definitions and styles are the drawing.
+_SVG_ELEMENTS = (
+    (re.compile(rb"<\?xpacket\b.*?\?>.*?<\?xpacket\s+end[^>]*\?>", re.S | re.I), b"xmp"),
+    (re.compile(rb"<metadata\b[^>]*>.*?</metadata\s*>", re.S | re.I), b""),
+    (re.compile(rb"<metadata\b[^>]*/>", re.I), b""),
+    (re.compile(rb"<!--.*?-->", re.S), b"comment"),
+)
+
+#: A namespace declaration, so one left naming nothing can be found again.
+_SVG_NAMESPACE = re.compile(rb'\s+xmlns:(?P<prefix>[A-Za-z0-9_.-]+)="[^"]*"')
+
+
+def _strip_svg(raw: bytes) -> tuple[bytes, list[str]]:
+    """Take the metadata elements out of the drawing and leave the rest as it is.
+
+    The document is edited as bytes rather than parsed and written back. A
+    drawing is somebody's artwork: re-serialising it would reorder attributes,
+    change quoting and rewrite entities in a file where none of that was asked
+    for, and the point here is to remove metadata, not to reformat.
+    """
+    if _SVG_ROOT.search(raw[:_SVG_SNIFF]) is None:
+        raise ValueError("not an SVG")
+
+    body = raw
+    removed: list[str] = []
+    for pattern, name in _SVG_ELEMENTS:
+        cut = pattern.findall(body)
+        if not cut:
+            continue
+        body = pattern.sub(b"", body)
+        removed.extend(name.decode() if name else _svg_block(piece) for piece in cut)
+
+    # A namespace declaration left naming nothing is metadata too, but one still
+    # in use holds the drawing together. Each is tested against what remains
+    # instead of being removed by name.
+    for found in _SVG_NAMESPACE.finditer(raw):
+        prefix = found.group("prefix") + b":"
+        if prefix in raw and prefix not in body:
+            body = body.replace(found.group(0), b"", 1)
+
+    return body, removed
+
+
+def _svg_block(element: bytes) -> str:
+    """What a `metadata` element turned out to be holding."""
+    if b"manifest" in element or b"c2pa" in element:
+        return "c2pa"
+    if b"xmpmeta" in element or b"rdf:RDF" in element:
+        return "xmp"
+    return "svg metadata"
 
 
 # --- ISO base media: MP4, MOV and their relatives ----------------------------
@@ -466,6 +531,7 @@ def _strip_zip(raw: bytes) -> tuple[bytes, list[str]]:
 
 _STRIPPERS = {
     ".png": _strip_png,
+    ".svg": _strip_svg,
     ".apng": _strip_png,
     ".jpg": _strip_jpeg,
     ".jpeg": _strip_jpeg,

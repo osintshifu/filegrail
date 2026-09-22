@@ -1,6 +1,6 @@
 <div align="center">
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.42.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
+[![PyPI](https://img.shields.io/badge/pypi-v0.43.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
 
 </div>
 
@@ -420,7 +420,7 @@ A telemetry track can reveal movement even when ordinary GPS metadata is absent.
 | **Font tables** | `.ttf` `.otf` `.ttc` `.otc` `.woff` | Family, designer, foundry, version, licence, creation and modification times, vendor identifier and variation axes |
 | **Maker notes** | `.jpg` `.jpeg` `.jpe` `.tif` `.tiff` `.dng` `.nef` `.cr2` `.arw` `.orf` `.rw2` `.webp` `.heic` `.heif` `.avif` | The vendor block beside the EXIF, where most cameras write the identity standard EXIF leaves blank: body serial number, lens serial number and model, shutter count, firmware version, frame number, and the owner name typed into the camera. Apple adds the identifiers that tie a Live Photo's still and film together, and a trail camera the event and frame numbers that put a season of captures in order. A note holding a picture instead of a directory is read as a preview; one that only points at a preview is reported, including when the file no longer contains it. A block this reader cannot place is reported as present rather than guessed at |
 | **Web document** | `.html` `.htm` `.xhtml` | Author, publisher, dates, canonical URL, Open Graph, Twitter Cards, JSON-LD, Microdata and RDFa |
-| **C2PA** | `.3gp` `.arw` `.avi` `.avif` `.cr2` `.dng` `.heic` `.heif` `.jpeg` `.jpg` `.m4a` `.m4v` `.mov` `.mp3` `.mp4` `.nef` `.orf` `.png` `.qt` `.rmi` `.rw2` `.tif` `.tiff` `.wav` `.wave` `.webp` | Producing application, creation data, digital source type such as a generative AI model, the recorded actions and ingredients, and whether the file still matches its manifest |
+| **C2PA** | `.3gp` `.arw` `.avi` `.avif` `.cr2` `.dng` `.heic` `.heif` `.jpeg` `.jpg` `.m4a` `.m4v` `.mov` `.mp3` `.mp4` `.nef` `.orf` `.png` `.qt` `.rmi` `.rw2` `.svg` `.tif` `.tiff` `.wav` `.wave` `.webp` | Producing application, creation data, digital source type such as a generative AI model, the recorded actions and ingredients, and whether the file still matches its manifest |
 
 XMP, XMP history and IPTC are not tied to one format and are read wherever a supported file carries them.
 
@@ -1108,9 +1108,12 @@ FileGrail writes cleaned copies. Original files are not modified.
 | --- | --- |
 | **JPEG** | `.jpg` `.jpeg` `.jpe` |
 | **PNG** | `.png` `.apng` |
+| **SVG** | `.svg` |
 | **ISO BMFF media** | `.mp4` `.m4v` `.m4a` `.mov` `.qt` `.3gp` |
 | **Microsoft OOXML** | `.docx` `.docm` `.dotx` `.xlsx` `.xlsm` `.xltx` `.pptx` `.pptm` |
 | **OpenDocument** | `.odt` `.ods` `.odp` `.odg` `.ott` `.otp` |
+
+Removed: EXIF, XMP, IPTC, Content Credentials, text and comment blocks, document properties and the timestamps a container records about itself. Pixels, vector paths, audio and video streams are left as they are.
 
 Check the expected result without writing files:
 

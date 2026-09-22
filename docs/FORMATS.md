@@ -51,7 +51,7 @@ on when you want the PDFs rather than everything a file said about itself.
 | `pe-header` | `.exe` `.dll` `.sys` `.scr` `.ocx` `.cpl` `.drv` `.efi` | COFF and optional header: machine, subsystem, linker version, link time; CodeView PDB path, GUID and age; Rich header tool records; version resource strings; whether an Authenticode signature is attached |
 | `font-tables` | `.ttf` `.otf` `.ttc` `.otc` `.woff` | `name`, `head`, `OS/2` and `fvar` tables: family, designer, manufacturer, version, licence and URLs, creation and modification times, vendor identifier, embedding rights, variation axes; the WOFF metadata block where one is present |
 | `web-document` | `.html` `.htm` `.xhtml` | Declared author, publisher, dates, canonical URL, Open Graph, Twitter Cards, bounded JSON-LD, Microdata and RDFa |
-| `c2pa` | `.3gp` `.arw` `.avi` `.avif` `.cr2` `.dng` `.heic` `.heif` `.jpeg` `.jpg` `.m4a` `.m4v` `.mov` `.mp3` `.mp4` `.nef` `.orf` `.png` `.qt` `.rmi` `.rw2` `.tif` `.tiff` `.wav` `.wave` `.webp` | JUMBF manifest: producing application, creation data, digital source type, actions, ingredients with their relationship, and whether the manifest's own hash still covers the file |
+| `c2pa` | `.3gp` `.arw` `.avi` `.avif` `.cr2` `.dng` `.heic` `.heif` `.jpeg` `.jpg` `.m4a` `.m4v` `.mov` `.mp3` `.mp4` `.nef` `.orf` `.png` `.qt` `.rmi` `.rw2` `.svg` `.tif` `.tiff` `.wav` `.wave` `.webp` | JUMBF manifest: producing application, creation data, digital source type, actions, ingredients with their relationship, and whether the manifest's own hash still covers the file |
 
 Mail is not in this table because a message's metadata is its delivery record
 rather than a block inside a container; it has a section of its own further

@@ -5,6 +5,17 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.43.0 - 2026-09-22
+
+### Added
+
+- `filegrail clean` strips an SVG: its metadata elements, its XMP packet, its comments and the namespaces they leave behind.
+- Content Credentials are read from an SVG, which carries the same manifest as base64 in a `c2pa:manifest` element.
+
+### Fixed
+
+- `filegrail clean` takes the Content Credentials out of a PNG. The manifest was read from the `caBX` chunk and then left in the cleaned copy.
+
 ## 0.42.0 - 2026-09-22
 
 ### Added

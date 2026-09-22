@@ -12,12 +12,15 @@ still see something in the output, the copy is not clean and says so.
 
 from __future__ import annotations
 
+import base64
 import struct
+import xml.etree.ElementTree as ElementTree
 import zipfile
 import zlib
 from pathlib import Path
 
 from filegrail.clean import clean_file
+from filegrail.sources.c2pa import read_c2pa_manifest
 from filegrail.sources.embedded import read_embedded_metadata
 from tests.photo import jpeg_with_exif
 
@@ -428,3 +431,47 @@ def test_a_package_with_an_encrypted_member_is_declined_rather_than_crashed(tmp_
 
     assert result.written is None
     assert "could not be taken apart" in (result.note or "")
+
+
+def test_a_pngs_content_credentials_do_not_survive_the_copy(tmp_path: Path):
+    """The manifest was read out of the `caBX` chunk and then left in the copy,
+    so the one format where the tool could show a manifest was the one where it
+    could not take it out."""
+    from tests.test_c2pa import GENERATED_CLAIM, _manifest, _png_with
+
+    image = tmp_path / "generated.png"
+    _png_with(image, _manifest(GENERATED_CLAIM))
+    out = tmp_path / "clean"
+    out.mkdir()
+
+    result = clean_file(image, out)
+
+    assert "c2pa" in result.removed
+    assert result.remaining == []
+    assert read_c2pa_manifest(result.written) is None
+
+
+def test_an_svg_loses_what_is_written_around_the_drawing(tmp_path: Path):
+    from tests.test_c2pa import GENERATED_CLAIM, _manifest
+
+    drawing = tmp_path / "mark.svg"
+    payload = base64.b64encode(_manifest(GENERATED_CLAIM)).decode()
+    drawing.write_text(
+        '<?xml version="1.0"?><!-- drawn by an editor -->'
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:c2pa="http://c2pa.org/manifest"'
+        ' viewBox="0 0 10 10">'
+        f"<metadata><c2pa:manifest>{payload}</c2pa:manifest></metadata>"
+        '<path d="M0 0 L10 10"/></svg>',
+        encoding="utf-8",
+    )
+    out = tmp_path / "clean"
+    out.mkdir()
+
+    result = clean_file(drawing, out)
+    copy = result.written.read_text(encoding="utf-8")
+
+    assert result.removed == ["c2pa", "comment"]
+    assert read_c2pa_manifest(result.written) is None
+    assert 'd="M0 0 L10 10"' in copy
+    assert "c2pa" not in copy
+    assert ElementTree.fromstring(copy).get("viewBox") == "0 0 10 10"

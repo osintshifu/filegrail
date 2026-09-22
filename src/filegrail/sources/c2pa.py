@@ -6,8 +6,9 @@ model rather than captured by a camera. It is the strongest account a file can
 give of itself, and unlike a browser record it survives every copy.
 
 The manifest lives in a JUMBF box (ISO/IEC 19566-5) holding CBOR, embedded in a
-PNG `caBX` chunk or a JPEG APP11 segment. Both are walked here with the standard
-library, so the tool keeps no runtime dependencies.
+PNG `caBX` chunk or a JPEG APP11 segment. An SVG is not a binary container, so it
+carries the same box as base64 inside a `c2pa:manifest` element. All of them are
+walked here with the standard library, so the tool keeps no runtime dependencies.
 
 **The signature is not verified.** Doing that needs certificate-chain validation
 and a crypto library. Everything reported from here is therefore what the
@@ -17,8 +18,11 @@ recorded as evidence, not as proof, and the report says which of the two it is.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import mmap
+import re
 import struct
 from collections.abc import Callable
 from pathlib import Path
@@ -36,8 +40,10 @@ if TYPE_CHECKING:  # `hashlib._Hash` exists in the type stubs, not at runtime.
 PNG_SUFFIXES = {".png"}
 JPEG_SUFFIXES = {".jpg", ".jpeg"}
 ID3_SUFFIXES = {".mp3"}
+SVG_SUFFIXES = {".svg"}
 SUPPORTED_SUFFIXES = (
     PNG_SUFFIXES
+    | SVG_SUFFIXES
     | JPEG_SUFFIXES
     | TIFF_SUFFIXES
     | WEBP_SUFFIXES
@@ -152,6 +158,8 @@ def read_c2pa_manifest(path: Path) -> EvidenceRecord | None:
 
 def _extract_jumbf(path: Path) -> tuple[bytes, str]:
     """The manifest store and the name of the structure it was read from."""
+    if path.suffix.lower() in SVG_SUFFIXES:
+        return _svg_element(path), "c2pa:manifest element"
     with path.open("rb") as handle:
         magic = handle.read(12)
         handle.seek(0)
@@ -282,6 +290,33 @@ def _id3_frame(handle: BinaryIO) -> bytes:
 
 def _synchsafe(raw: bytes) -> int:
     return (raw[0] << 21) | (raw[1] << 14) | (raw[2] << 7) | raw[3]
+
+
+#: The element an SVG carries its manifest in. The prefix is the document's
+#: choice, so the local name is what is matched, and the payload is base64 with
+#: whatever whitespace the writer wrapped it at.
+_SVG_MANIFEST = re.compile(
+    rb"<(?:[A-Za-z0-9_.-]+:)?manifest\b[^>]*>(?P<payload>[A-Za-z0-9+/=\s]*)"
+    rb"</(?:[A-Za-z0-9_.-]+:)?manifest\s*>",
+    re.IGNORECASE,
+)
+
+
+def _svg_element(path: Path) -> bytes:
+    """The manifest store an SVG writes as base64, decoded back to its bytes.
+
+    The element is found in the bytes rather than by parsing the document: a
+    drawing that will not parse can still carry a manifest, and nothing here
+    needs the rest of the tree.
+    """
+    raw = path.read_bytes()[:_MAX_STORE]
+    found = _SVG_MANIFEST.search(raw)
+    if found is None:
+        return b""
+    try:
+        return base64.b64decode(found.group("payload"))
+    except (binascii.Error, ValueError):
+        return b""
 
 
 def _png_chunk(handle: BinaryIO) -> bytes:
