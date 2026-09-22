@@ -192,3 +192,21 @@ def test_a_scan_claiming_more_restarts_than_a_file_may_hold_is_refused():
     assert found is None
     assert len(markers) == _MAX_SEGMENTS
     assert restarts == _MAX_SEGMENTS
+
+
+def test_redaction_blanks_the_bytes_a_comment_segment_opens_with(tmp_path: Path):
+    """A byte map prints what it names, and a comment's bytes are the comment.
+
+    Redaction takes the text out of `comments`; without this it would come back
+    one line below, in the opening bytes the byte map shows beside each segment.
+    """
+    path = tmp_path / "noted.jpg"
+    path.write_bytes(_jpeg())
+    analysis = analyse_jpeg(path)
+    assert analysis is not None
+    assert b"camera note" in next(marker.head for marker in analysis.markers if marker.code == 0xFE)
+
+    redacted = analysis.redacted()
+    assert all(marker.head == b"" for marker in redacted.markers if marker.code == 0xFE)
+    # Every other segment keeps the bytes that say what it is.
+    assert next(marker.head for marker in redacted.markers if marker.code == 0xD8) == b"\xff\xd8"

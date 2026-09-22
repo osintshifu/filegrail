@@ -53,12 +53,22 @@ _ENCODINGS = {
 }
 
 
+#: How much of a segment is kept so a report can show the bytes it is talking
+#: about. Enough for the marker, its declared length and the field that names it
+#: - `Exif\x00\x00II*`, `JFIF\x00`, a quantization table's precision - and short
+#: enough that a file with hundreds of segments costs nothing to carry.
+HEAD_BYTES = 16
+
+
 @dataclass(frozen=True, slots=True)
 class JpegMarker:
     name: str
     code: int
     offset: int
     length: int
+    #: The opening bytes of the segment as they lie in the file, so a byte map
+    #: can print them rather than describe them.
+    head: bytes = b""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +117,17 @@ class JpegAnalysis:
         same as `EvidenceRecord.redacted` because it answers for the same promise.
         Everything else here is measured rather than quoted.
         """
-        return replace(self, comments=tuple(redact_text(value) for value in self.comments))
+        # A comment segment's opening bytes are the comment, so the head that
+        # lets a byte map print what it names would put the text back into the
+        # report a line below where redaction took it out.
+        markers = tuple(
+            replace(marker, head=b"") if marker.code == 0xFE else marker for marker in self.markers
+        )
+        return replace(
+            self,
+            comments=tuple(redact_text(value) for value in self.comments),
+            markers=markers,
+        )
 
 
 def jpeg_size(data: bytes) -> tuple[int, int] | None:
@@ -127,7 +147,7 @@ def analyse_jpeg(path: Path) -> JpegAnalysis | None:
 
 
 def _walk(handle: BinaryIO, file_size: int) -> JpegAnalysis | None:
-    markers = [JpegMarker("SOI", 0xD8, 0, 2)]
+    markers = [JpegMarker("SOI", 0xD8, 0, 2, b"\xff\xd8")]
     quantization: list[QuantizationTable] = []
     huffman: list[HuffmanTable] = []
     comments: list[str] = []
@@ -147,11 +167,11 @@ def _walk(handle: BinaryIO, file_size: int) -> JpegAnalysis | None:
         code, offset = found
         name = _marker_name(code)
         if code == 0xD9:
-            markers.append(JpegMarker(name, code, offset, 2))
+            markers.append(JpegMarker(name, code, offset, 2, bytes((0xFF, code))))
             eoi_offset = offset
             break
         if code == 0x01 or 0xD0 <= code <= 0xD8:
-            markers.append(JpegMarker(name, code, offset, 2))
+            markers.append(JpegMarker(name, code, offset, 2, bytes((0xFF, code))))
             continue
         length_raw = handle.read(2)
         if len(length_raw) != 2:
@@ -162,7 +182,8 @@ def _walk(handle: BinaryIO, file_size: int) -> JpegAnalysis | None:
         payload = handle.read(length - 2)
         if len(payload) != length - 2:
             return None
-        markers.append(JpegMarker(name, code, offset, length + 2))
+        head = bytes((0xFF, code)) + length_raw + payload
+        markers.append(JpegMarker(name, code, offset, length + 2, head[:HEAD_BYTES]))
 
         if code in _ENCODINGS:
             frame = _frame(payload)
@@ -285,7 +306,9 @@ def _entropy_marker(
                 # millions of restarts cannot be read into memory first.
                 handle.seek(base + last + 2)
                 return None, restarts
-            markers.append(JpegMarker(_marker_name(code), code, base + first, 2))
+            markers.append(
+                JpegMarker(_marker_name(code), code, base + first, 2, bytes((0xFF, code)))
+            )
             restarts += 1
             at = last + 2
             continue
