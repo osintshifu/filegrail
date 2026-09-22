@@ -1171,19 +1171,24 @@ def render_photo_html(
     output: Path | None = None,
     now: datetime | None = None,
     assets: Path | None = None,
+    case: str | None = None,
+    examiner: str | None = None,
 ) -> str:
     """Render one complete photo-forensics report.
 
     With `assets` the images are written into that directory and pointed at, and
     the page is the small part; without it every image is carried inside the page
     and the report is one file. `assets` needs `output`, because a relative link
-    is relative to something.
+    is relative to something. `case` and `examiner` head the title block when
+    given.
     """
     if assets is not None and output is None:
         raise ValueError("assets needs output: a link is relative to the page holding it")
     written = _Assets(assets, output) if assets is not None and output is not None else None
     moment = (now or datetime.now().astimezone()).strftime("%Y-%m-%d %H:%M %Z").strip()
-    title = f"{output.name} - Image examination report" if output else "Image examination report"
+    title = " - ".join(
+        part for part in (case, output.name if output else None, "Image examination report") if part
+    )
     rows = _field_rows(collection)
     from . import photomap
 
@@ -1246,7 +1251,7 @@ def render_photo_html(
         head
         + (photomap.defs() if fixes else "")
         + nav
-        + _mast(collection, moment, output, written)
+        + _mast(collection, moment, output, written, case, examiner)
         + f'<div class="shell">{_rail(collection, written)}<main>{main}</main></div>'
         + f'<section class="scope" id="scope">{_scope(collection, written)}</section>'
         + top
@@ -1256,9 +1261,16 @@ def render_photo_html(
 
 
 def _mast(
-    collection: PhotoCollection, moment: str, output: Path | None, written: _Assets | None
+    collection: PhotoCollection,
+    moment: str,
+    output: Path | None,
+    written: _Assets | None,
+    case: str | None,
+    examiner: str | None,
 ) -> str:
-    facts = [("target", collection.root), ("analysed", moment)]
+    # Which case and whose work come first: they are what a report is filed by.
+    facts = [(label, value) for label, value in (("case", case), ("examiner", examiner)) if value]
+    facts += [("target", collection.root), ("analysed", moment)]
     if output is not None:
         facts.append(("report", str(output)))
     # Where the images are is the first thing to know about a page that may not

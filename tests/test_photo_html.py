@@ -244,6 +244,22 @@ def test_findings_are_numbered_once_across_the_collection_and_listed_in_the_summ
     assert not re.search(r"\bF0[5-9]\b", page)
 
 
+def test_the_title_block_names_the_case_and_the_examiner_when_given():
+    """A report that gets filed has to say which case it belongs to and who made it.
+
+    Both are what the person running the tool types, so both are escaped like
+    anything else read from outside, and a report made without them carries no
+    empty rows standing in for them.
+    """
+    page = render_photo_html(_collection(), now=NOW, case="2026/014 <x>", examiner="J. Nowak")
+    plain = render_photo_html(_collection(), now=NOW)
+
+    assert "<dt>case</dt><dd>2026/014 &lt;x&gt;</dd><dt>examiner</dt><dd>J. Nowak</dd>" in page
+    assert "<title>2026/014 &lt;x&gt; - Image examination report</title>" in page
+    assert "<dt>case</dt>" not in plain
+    assert "<dt>examiner</dt>" not in plain
+
+
 def test_redacted_and_empty_reports_state_what_was_not_evaluated():
     redacted = render_photo_html(_collection(redacted=True), now=NOW)
     empty = render_photo_html(PhotoCollection("/empty", (), False, ()), now=NOW)

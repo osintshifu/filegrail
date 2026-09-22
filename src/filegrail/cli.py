@@ -282,6 +282,12 @@ def _photo_parser() -> argparse.ArgumentParser:
         help="Redact text and omit every pixel-bearing preview and diagnostic.",
     )
     parser.add_argument(
+        "--case", metavar="REF", help="Case reference to head the report's title block."
+    )
+    parser.add_argument(
+        "--examiner", metavar="NAME", help="Examiner to name in the report's title block."
+    )
+    parser.add_argument(
         "--no-recurse", action="store_true", help="Do not descend into subdirectories."
     )
     parser.add_argument(
@@ -693,7 +699,9 @@ def _photo(rest: list[str]) -> int:
 
     output = args.out.resolve()
     images = None if args.embed else output.with_name(f"{output.stem}.files")
-    report = render_photo_html(collection, output=output, assets=images)
+    report = render_photo_html(
+        collection, output=output, assets=images, case=args.case, examiner=args.examiner
+    )
     return _emit_atomic(report, output)
 
 

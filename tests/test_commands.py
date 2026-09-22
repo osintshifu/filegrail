@@ -103,11 +103,14 @@ def test_photo_writes_a_self_contained_report_atomically(tmp_path: Path, capsys,
     jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
     monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
 
-    assert main(["photo", str(photo), "--out", str(report), "--hash"]) == 0
+    arguments = ["--hash", "--case", "2026/014", "--examiner", "J. Nowak"]
+    assert main(["photo", str(photo), "--out", str(report), *arguments]) == 0
 
     assert capsys.readouterr().out == ""
     page = report.read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>")
+    assert "<dd>2026/014</dd>" in page
+    assert "<dd>J. Nowak</dd>" in page
     assert "camera.jpg" in page
     assert str(report.resolve()) in page
     assert "not calculated" not in page
