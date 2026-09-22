@@ -265,9 +265,9 @@ def _photo_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="filegrail photo",
-        description="Build an HTML forensic report for still photographs.",
+        description="Build an HTML forensic report for still images.",
     )
-    parser.add_argument("path", type=Path, help="Photograph or directory to examine.")
+    parser.add_argument("path", type=Path, help="Image or directory to examine.")
     parser.add_argument(
         "-o",
         "--out",
@@ -292,7 +292,7 @@ def _photo_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Carry every image inside the page, as one portable file. Without it the page "
-            "points at the photographs where they lie and writes its maps to a directory "
+            "points at the images where they lie and writes its maps to a directory "
             "beside itself, which keeps the page small and lets a browser load only what "
             "is on screen."
         ),
@@ -305,7 +305,7 @@ def _photo_parser() -> argparse.ArgumentParser:
             "Megabytes of previews and diagnostic maps one report may produce "
             f"(default: {LINKED_IMAGE_BUDGET // (1024 * 1024)}, or "
             f"{IMAGE_BUDGET // (1024 * 1024)} with --embed, where the images have to fit "
-            "in a page a browser can open; 0 for no limit). Photographs past it keep "
+            "in a page a browser can open; 0 for no limit). Images past it keep "
             "every fact read from them and lose only their pictures."
         ),
     )
@@ -668,13 +668,13 @@ def _photo(rest: list[str]) -> int:
     from .photohtml import render_photo_html
 
     if root.is_file() and root.suffix.lower() not in PHOTO_SUFFIXES:
-        print(f"filegrail: unsupported photograph: {args.path}", file=sys.stderr)
+        print(f"filegrail: unsupported image: {args.path}", file=sys.stderr)
         return 2
 
     records = scan(
         root,
         recursive=not args.no_recurse,
-        # A page that points at a photograph rather than carrying it shows
+        # A page that points at an image rather than carrying it shows
         # whatever is at that path when it is opened. The digest is what lets a
         # reader tell that it is still the file that was read, so a linked report
         # is hashed whether or not it was asked for.
@@ -688,7 +688,7 @@ def _photo(rest: list[str]) -> int:
     budget = default if args.image_budget is None else args.image_budget * 1024 * 1024 or None
     collection = analyse_photos(records, root, redact=args.redact, budget=budget)
     if not collection.photos:
-        print(f"filegrail: no supported photographs found in {args.path}", file=sys.stderr)
+        print(f"filegrail: no supported images found in {args.path}", file=sys.stderr)
         return 2
 
     output = args.out.resolve()

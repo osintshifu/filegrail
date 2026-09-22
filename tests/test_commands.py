@@ -130,8 +130,8 @@ def test_photo_directory_honours_recursion(tmp_path: Path, capsys, monkeypatch):
     assert main(["photo", str(root), "--out", str(shallow), "--no-recurse"]) == 0
 
     capsys.readouterr()
-    assert recursive.read_text(encoding="utf-8").count('class="plate"') == 2
-    assert shallow.read_text(encoding="utf-8").count('class="plate"') == 1
+    assert recursive.read_text(encoding="utf-8").count('<article class="frame"') == 2
+    assert shallow.read_text(encoding="utf-8").count('<article class="frame"') == 1
 
 
 def test_photo_refuses_no_images_and_an_unsupported_single_file(tmp_path: Path, capsys):
@@ -139,9 +139,9 @@ def test_photo_refuses_no_images_and_an_unsupported_single_file(tmp_path: Path, 
     text.write_text("nothing photographic", encoding="utf-8")
 
     assert main(["photo", str(tmp_path), "--out", str(tmp_path / "none.html")]) == 2
-    assert "no supported photographs" in capsys.readouterr().err
+    assert "no supported images" in capsys.readouterr().err
     assert main(["photo", str(text), "--out", str(tmp_path / "text.html")]) == 2
-    assert "unsupported photograph" in capsys.readouterr().err
+    assert "unsupported image" in capsys.readouterr().err
 
 
 def test_photo_requires_an_output_file(tmp_path: Path):
@@ -169,7 +169,8 @@ def test_photo_redaction_omits_the_embedded_thumbnail(tmp_path: Path, capsys, mo
     capsys.readouterr()
     page = report.read_text(encoding="utf-8")
     assert "No pixel-bearing image is embedded in this redacted report." in page
-    assert "data:image/" not in page
+    # The brand mark is drawn geometry; an encoded payload is what must be gone.
+    assert ";base64," not in page
     assert "not evaluated" in page
 
 
