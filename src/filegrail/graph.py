@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -181,8 +181,33 @@ def build_graph(records: list[FileRecord], identifiers: list[Identifier]) -> Gra
 
     return Graph(
         tuple(sorted(nodes.values(), key=lambda node: node.id)),
-        tuple(sorted(relationships, key=lambda edge: (edge.source, edge.target, edge.kind))),
+        _one_edge_per_claim(relationships),
     )
+
+
+def _one_edge_per_claim(relationships: list[Relationship]) -> tuple[Relationship, ...]:
+    """One edge for one claim, however many places support it.
+
+    A document naming the same person in `creator` and in `lastModifiedBy`
+    produced two identical edges, which reads as two findings where there is
+    one. Both grounds belong on the same edge: the edge says the relationship
+    holds, and its evidence says on how many independent grounds. Keeping them
+    apart also loses the thing the evidence is for, because neither copy knows
+    about the other.
+    """
+    merged: dict[tuple[str, str, str], Relationship] = {}
+    for edge in relationships:
+        key = (edge.source, edge.target, edge.kind)
+        standing = merged.get(key)
+        if standing is None:
+            merged[key] = edge
+            continue
+        merged[key] = replace(
+            standing,
+            count=standing.count + edge.count,
+            evidence=tuple(dict.fromkeys(standing.evidence + edge.evidence)),
+        )
+    return tuple(sorted(merged.values(), key=lambda edge: (edge.source, edge.target, edge.kind)))
 
 
 def _lineage_relationships(records: list[FileRecord]) -> list[Relationship]:

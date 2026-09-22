@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
@@ -643,3 +644,34 @@ def test_a_scan_asked_for_metadata_pivots_only_does_not_read_content(tmp_path: P
     assert main(["scan", str(case), "--pivots", "--meta", "--json", "--home", str(tmp_path)]) == 0
 
     assert json.loads(capsys.readouterr().out)["identifiers"] == []
+
+
+class _NarrowConsole:
+    """A console that cannot encode everything, the way cp1252 cannot."""
+
+    encoding = "cp1252"
+
+    def __init__(self) -> None:
+        self.buffer = io.BytesIO()
+
+    def write(self, text: str) -> int:
+        self.buffer.write(text.encode(self.encoding))  # raises what a console raises
+        return len(text)
+
+    def flush(self) -> None:
+        pass
+
+
+def test_machine_output_keeps_its_bytes_on_a_console_that_cannot_encode_them(monkeypatch):
+    """A GraphML file declares that it is UTF-8 and a JSON reader expects it.
+    Replacing a character the console cannot show makes the declaration a lie:
+    the JSON stops decoding and the XML stops parsing, with an exit code of 0.
+    """
+    from filegrail import cli
+
+    console = _NarrowConsole()
+    monkeypatch.setattr(cli.sys, "stdout", console)
+
+    assert cli._emit("<x>caf\u00e9 \u00b7 \u5b57</x>", None, exact=True) == 0
+
+    assert console.buffer.getvalue().decode("utf-8") == "<x>caf\u00e9 \u00b7 \u5b57</x>\n"

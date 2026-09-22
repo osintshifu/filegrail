@@ -310,3 +310,66 @@ def test_xmp_lineage_uses_only_the_fields_that_created_the_link():
         "XMP · xmpMM:DocumentID",
     ]
     assert all("OriginalDocumentID" not in item["place"] for item in edge["evidence"])
+
+
+def test_one_claim_is_one_edge_however_many_places_support_it():
+    """A document naming the same person in `creator` and in `lastModifiedBy`
+    used to produce two identical edges, which reads as two findings where
+    there is one. Both grounds belong to the same claim."""
+    from filegrail.graph import build_graph
+
+    record = _record(
+        "/case/report.docx",
+        EvidenceRecord(
+            source="document-metadata",
+            block="ooxml-properties",
+            fields={"creator": "Stephen Richard", "lastModifiedBy": "Stephen Richard"},
+        ),
+    )
+
+    graph = build_graph([record], [])
+
+    authored = [edge for edge in graph.relationships if edge.kind == "author"]
+    assert len(authored) == 1
+    assert authored[0].count == 2
+    assert len(authored[0].evidence) == 2
+    assert {found.place for found in authored[0].evidence} == {
+        "OOXML properties \u00b7 creator",
+        "OOXML properties \u00b7 lastModifiedBy",
+    }
+
+
+def test_graphml_keeps_a_name_that_xml_cannot_hold():
+    """A name on ext4 or NTFS may hold a control character, and ElementTree
+    writes it out as a document no parser will open."""
+    import xml.etree.ElementTree as ElementTree
+
+    from filegrail.graph import Graph, Node
+    from filegrail.graph_export import render_graphml
+
+    named = Node("file:/case/we\x07ird.txt", "file", "/case/we\x07ird.txt")
+    page = render_graphml(Graph((named,), ()))
+
+    ElementTree.fromstring(page)
+    assert "\\u0007" in page
+
+
+def test_graphml_names_its_nodes_and_types_its_edges():
+    """Without these an importer labels every node by its export id and gives
+    every relationship the same nameless type."""
+    from filegrail.graph import Graph, Node, Relationship
+    from filegrail.graph_export import render_graphml
+
+    nodes = (
+        Node("file:/case/holiday.jpg", "file", "/case/holiday.jpg"),
+        Node("camera_model:nikon d70", "camera_model", "NIKON D70", "nikon d70"),
+    )
+    page = render_graphml(
+        Graph(nodes, (Relationship(nodes[0].id, nodes[1].id, "camera model", 3, ()),))
+    )
+
+    assert '<key id="label" for="edge" attr.name="label" attr.type="string" />' in page
+    assert '<data key="label_n">holiday.jpg</data>' in page
+    assert '<data key="labels">:CameraModel</data>' in page
+    assert '<data key="label">CAMERA_MODEL</data>' in page
+    assert '<data key="weight">3.0</data>' in page

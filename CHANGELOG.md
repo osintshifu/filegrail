@@ -5,6 +5,18 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.44.0 - 2026-09-23
+
+### Fixed
+
+- A graph written to a console that cannot encode every character is no longer written in that console's encoding while declaring itself UTF-8. JSON, GraphML, the CSV edge list and the HTML report keep their bytes.
+- A name holding a character XML cannot carry no longer produces a GraphML file that no parser will open. The character is escaped and the name stays readable.
+- One claim is one relationship. A document naming the same person in two fields produced two identical edges instead of one edge holding both grounds.
+
+### Changed
+
+- Every node in a GraphML export carries a readable label and its type, and every relationship carries its type and its count as a weight, so a graph tool shows the values instead of the export identifiers.
+
 ## 0.43.0 - 2026-09-22
 
 ### Added

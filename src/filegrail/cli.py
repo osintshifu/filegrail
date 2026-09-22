@@ -679,7 +679,7 @@ def _scan(rest: list[str]) -> int:
             home=home,
             unsearched=missed,
         )
-    return _emit(report, written)
+    return _emit(report, written, exact=args.json or args.graphml or args.graph_csv or args.html)
 
 
 def _image(rest: list[str]) -> int:
@@ -751,10 +751,23 @@ def _image(rest: list[str]) -> int:
     )
 
 
-def _emit(report: str, out: Path | None) -> int:
-    """The report, to the file it was asked for or to standard output."""
+def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:
+    """The report, to the file it was asked for or to standard output.
+
+    `exact` is for output another program reads: JSON, GraphML, the CSV edge
+    list and the HTML report. Each of those declares that it is UTF-8, and a
+    console that cannot encode a character must not be allowed to change what
+    the document says it contains - a `?` in the middle of a file name is a
+    changed value, and in XML it is a file no parser will open. Piping a scan
+    on a console that is not UTF-8 is ordinary on Windows, and it used to
+    produce a corrupt document and an exit code of 0.
+    """
     said = report if report.endswith("\n") else report + "\n"
     if out is None:
+        if exact:
+            sys.stdout.buffer.write(said.encode("utf-8"))
+            sys.stdout.buffer.flush()
+            return 0
         # A terminal that cannot show a character in a file name still gets
         # the report, with that character replaced, rather than a traceback.
         try:

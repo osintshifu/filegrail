@@ -1,6 +1,6 @@
 <div align="center">
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.43.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
+[![PyPI](https://img.shields.io/badge/pypi-v0.44.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
 
 </div>
 
@@ -889,7 +889,7 @@ Graph edges preserve:
 filegrail ./case --graphml -o graph.graphml
 ```
 
-GraphML can be imported into Gephi, yEd, Cytoscape, NetworkX and Neo4j workflows using GraphML tooling.
+Each node carries a readable label and its type, and each relationship carries its type and its occurrence count as a weight, so Gephi, NetworkX and a Neo4j import read the graph without being configured first. yEd draws the shape but shows none of the values: it reads only its own attributes.
 
 ### CSV relationship export
 
