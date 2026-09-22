@@ -205,3 +205,28 @@ def test_a_single_compressed_file_is_read_under_its_own_name(tmp_path: Path):
     assert child.size == photo.stat().st_size
     exif = next(found for found in child.evidence if found.block == "exif")
     assert exif.fields["Model"] == "COOLPIX P6000"
+
+
+def test_a_member_keeps_the_vendor_block_of_the_photograph_it_is(tmp_path: Path):
+    """A member is read as a file, which means by every reader a file gets.
+
+    The body serial lives in the vendor block rather than in standard Exif, so a
+    reader list that stops short of it loses the one field that groups a camera's
+    photographs - and loses it only for the ones that arrived inside something.
+    """
+    from tests.photo import jpeg_with_maker_note
+    from tests.test_makernotes import nikon_note
+
+    photo = tmp_path / "nikon.jpg"
+    jpeg_with_maker_note(photo, "NIKON CORPORATION", "NIKON D300", nikon_note("3105364", 241575))
+    package = tmp_path / "case.zip"
+    with zipfile.ZipFile(package, "w") as bundle:
+        bundle.write(photo, "nikon.jpg")
+
+    members = read_members(package)
+
+    assert len(members) == 1
+    blocks = {found.block for found in members[0].evidence}
+    fields = {key: value for found in members[0].evidence for key, value in found.fields.items()}
+    assert "maker-notes" in blocks
+    assert fields["SerialNumber"] == "3105364"

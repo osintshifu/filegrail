@@ -33,7 +33,7 @@ from pathlib import Path
 from ..models import CONTAINER_MEMBER, EvidenceRecord
 from ..util import Allowance, iso
 from .c2pa import read_c2pa_manifest
-from .embedded import SUFFIXES, read_embedded_metadata
+from .embedded import SUFFIXES, read_embedded_metadata, read_maker_notes
 from .iptc import read_iptc
 from .xmp import read_xmp
 
@@ -256,7 +256,7 @@ def read_member(name: str, raw: bytes) -> list[EvidenceRecord]:
             return []
 
         found = []
-        for reader in (read_c2pa_manifest, read_embedded_metadata, read_iptc):
+        for reader in (read_c2pa_manifest, read_embedded_metadata, read_maker_notes, read_iptc):
             claim = reader(copy)
             if claim is not None:
                 found.append(claim)
