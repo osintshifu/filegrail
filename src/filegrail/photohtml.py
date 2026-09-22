@@ -1,20 +1,13 @@
-"""Self-contained HTML renderer for photo-forensics findings.
+"""Self-contained HTML renderer for digital image examination findings.
 
 Its own page rather than a section of the investigation report: an image is
 looked at before it is read, so the picture is the subject here and the evidence
 sits beside it. The design tokens, the mark and the icon sprite are the ones the
 investigation report uses, so the two read as one tool.
 
-The page is a workspace rather than an article. A rail on the left holds the
-images and, under them, the analyses this report can bring to bear; the space
-beside it holds one image at a time, laid out as panels that stand side by side.
-Every panel has the same anatomy - a name, what it is for, what it produced, and
-a strip saying what is on screen - so a reader learns to read one panel and can
-then read all of them.
-
-All of it is in the markup before a script runs. Without one the rail is an
-index, each analysis links to the description of itself, and the images are a
-document from first to last.
+The gallery is the entry point. One inline inspector expands beneath the selected
+thumbnail row, retaining collection context and filters. Its panels are grouped
+by task; without JavaScript and in print every panel remains readable.
 """
 
 # The embedded stylesheet and script are deliberately compact because they are
@@ -26,17 +19,17 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import os
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
-from pathlib import Path, PurePath
+from pathlib import Path
 from urllib.parse import quote
 
-from . import __version__
-from .htmlicons import FAVICON, ICONS, MARK, MARK_SMALL
-from .models import BLOCK_LABELS
+from . import __version__, reportchrome
+from .htmlicons import FAVICON, ICONS, MARK_SMALL
+from .models import ACTIVITY, BLOCK_LABELS, METADATA, ORIGIN, EvidenceRecord
+from .models import label as record_label
 from .photo import PhotoArtifact, PhotoCollection, PhotoResult
 from .photojpeg import JpegAnalysis, JpegMarker
 from .photomap import Fix
@@ -60,20 +53,13 @@ LINKED_POLICY = (
 #: What to call a written-out image, by what it is.
 _SUFFIXES = {"image/png": ".png", "image/jpeg": ".jpg"}
 
-#: What a browser decodes inside an `<img>`. An image this tool reads but a
-#: browser cannot - a TIFF, a raw file - is shown through the preview the pixel
-#: reader derived from it rather than pointed at where it lies: an `<img>` given
-#: a TIFF renders nothing at all, and the report showed a broken image instead
-#: of the preview it had already produced.
-_RENDERABLE = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"}
-
-#: The stage layers that are the image rather than a map derived from it.
+#: The stage layers that are working images rather than analytical outputs.
 _PHOTOGRAPHIC = ("main-preview", "embedded-preview", "maker-preview")
 
 
 @dataclass(frozen=True, slots=True)
 class _Method:
-    """What one derived image is for, and the limitations on reading it.
+    """What one analytical output is for, and the limitations on reading it.
 
     A map with no reading is decoration. Each one here says what it makes
     visible, what would be a mistake to conclude from it, and where the
@@ -90,7 +76,7 @@ class _Method:
 _GUIDE: dict[str, _Method] = {
     "main-preview": _Method(
         "Image",
-        "The image itself, decoded and scaled to a bounded working size.",
+        "The working image, decoded from the evidence file and scaled to a bounded size.",
         "Every map below is measured from this decode rather than from the file at full"
         " size, so none of them can show what the scaling removed.",
     ),
@@ -150,18 +136,18 @@ _GUIDE: dict[str, _Method] = {
 }
 _GUIDE["ela-q75"] = _GUIDE["ela-q90"]
 
-#: What the panels that are not a derived image are for. A reader meeting one
+#: What the panels that are not analytical outputs are for. A reader meeting one
 #: should be able to ask it what it does without leaving it, which is what the
 #: button in every panel bar opens.
 _NOTES: dict[str, str] = {
-    "image": "The working decode of the image, with any map derived from it laid"
+    "image": "The working decode of the image, with any analytical output laid"
     " over the same pixels rather than shown beside them.",
     "fileinfo": "What the file is, taken from the filesystem and from the header, so the two"
     " can be read against each other.",
     "structure": "Where this file's bytes go, segment by segment, in the order the encoder"
     " wrote them.",
-    "fields": "Which blocks spoke for this image and how much each of them said. The"
-    " values are gathered once for the whole report, where they can be compared.",
+    "fields": "Which origin, metadata and activity sources spoke for this image and how"
+    " each record was matched. Values are gathered once for comparison.",
     "findings": "Disagreements this tool can support mechanically, and material it flags for"
     " a reader to decide.",
     "coverage": "Which methods ran against this file, and what stopped the ones that did not.",
@@ -179,8 +165,8 @@ _CAUTIONS: dict[str, str] = {
     "structure": "A camera file spends nearly everything on the scan. A large application"
     " block or bytes after the end marker are worth looking at, but both are also ordinary:"
     " editors write large colour profiles and some cameras pad the tail.",
-    "fields": "A count says how much a block said, never whether it was true. A file rewritten"
-    " by an editor can carry a complete and entirely fabricated set.",
+    "fields": "Category and match basis describe a record; they do not make its value true."
+    " File-carried metadata can be complete and entirely fabricated.",
     "findings": "Neither state establishes that an image is authentic or manipulated. A"
     " conflict is a disagreement between two recorded things, nothing more.",
     "coverage": "A method that did not run found nothing because it did not look. It is not"
@@ -188,33 +174,6 @@ _CAUTIONS: dict[str, str] = {
     "markers": "Tables and marker order identify the last encoder, not the camera and not the"
     " photographer. Any editor that re-saves the file replaces them.",
 }
-
-#: The rail's taxonomy: the analyses this report can bring to an image,
-#: in the order a reader meets them.
-_TREE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
-    ("General", (("image", "Image"), ("fileinfo", "File information"))),
-    (
-        "Metadata",
-        (
-            ("structure", "File structure"),
-            ("fields", "Metadata sources"),
-            ("embedded-preview", "Embedded preview"),
-            ("maker-preview", "Maker preview"),
-        ),
-    ),
-    ("Inspection", (("findings", "Findings"), ("coverage", "Analyses performed"))),
-    ("Colour", (("histogram", "Channel histogram"),)),
-    ("Detail", (("luminance-gradient", "Luminance gradient"),)),
-    ("Noise", (("noise-residual", "Noise residual"), ("bit-planes", "Bit planes"))),
-    (
-        "Compression",
-        (
-            ("ela-q90", "Error level analysis q90"),
-            ("ela-q75", "Error level analysis q75"),
-            ("markers", "JPEG marker stream"),
-        ),
-    ),
-)
 
 #: What each kind of byte in a JPEG is doing there, and the colour that says so.
 #: A file's own proportions are a fact about it: an image off a camera spends
@@ -242,21 +201,21 @@ _CORNERS = "".join(
 # What the summary's own panels are for. They are read the same way every other
 # panel here is read, so they carry the same two sentences.
 _GUIDE["clusters"] = _Method(
-    "Collection",
-    "Which images share a source, on four axes: the make the file claims, the body"
-    " serial, the lens, and the encoder signature its tables and marker order make.",
-    "A make is what the file says about itself. Files rewritten by an editor can carry a"
-    " complete and fabricated set, and a file that says nothing is not thereby suspicious.",
+    "Digital Image Collection",
+    "How images group by four shared attributes: claimed camera make, body serial, lens,"
+    " and the JPEG encoding fingerprint made from tables and marker order.",
+    "Shared attributes support grouping, not common-source attribution. A file can be"
+    " rewritten or fabricated, and distinct encoders can produce the same fingerprint.",
 )
 _GUIDE["times"] = _Method(
-    "Collection",
-    "Every recorded capture time on one axis, with the files that record none in a strip"
-    " beneath it.",
+    "Digital Image Collection",
+    "Every recorded capture time on one axis, one dot per image; captures close together"
+    " stack into a column.",
     "A recorded time is a claim by the file. The filesystem time of each copy sits on its"
     " own plate, where the two can be read against each other.",
 )
 _GUIDE["geolocation"] = _Method(
-    "Collection",
+    "Digital Image Collection",
     "Where the files that carry coordinates say they were, at three scales: the world, the"
     " same outline zoomed, and a plot in metres with no basemap under it.",
     "Coordinates say where the receiver believed it was when the file was written, to the"
@@ -280,7 +239,7 @@ STYLE = r"""
 --t-label:11px;--t-small:12px;--t-table:12.5px;--t-body:13.5px;--t-lead:15px;--t-h2:21px;--track:.14em;
 --mono:"IBM Plex Mono","JetBrains Mono","SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
 --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans","Helvetica Neue",sans-serif;
---r:3px;--gutter:clamp(18px,3vw,40px);--nav:48px;--rail:318px;--cols:2}
+--r:3px;--gutter:16px;--nav:48px;--rail:318px}
 *{box-sizing:border-box}
 /* Author `display` beats the browser's own rule for the attribute, so a layer
    laid out as a grid stays on screen when it is hidden. Everything this report
@@ -310,18 +269,36 @@ font:400 var(--t-small)/1 var(--sans);white-space:nowrap}
 .btn.icon{width:28px;padding:0}
 .btn[aria-pressed=true]{border-color:var(--accent);color:var(--ink);background:var(--brand-soft)}
 /* masthead */
-.mast{padding:20px var(--gutter) 22px;border-bottom:1px solid var(--line)}
-.mast .word{margin:0 0 16px;font:500 var(--t-label)/1.4 var(--sans);letter-spacing:.2em;
-text-transform:uppercase;color:var(--muted)}
-.mast .word small{font-size:inherit;font-weight:400;color:var(--faint)}
-.mast-body{display:grid;grid-template-columns:auto 1fr;gap:0 24px;align-items:stretch}
-.mast-mark{display:flex;align-items:stretch}
-.mast .mark{height:100%;max-height:96px;width:auto;flex:none}
-.facts{display:grid;grid-template-columns:auto 1fr;gap:5px 22px;justify-content:start;
-font-size:var(--t-body);align-content:center}
+.mast{padding:14px var(--gutter) 12px;border-bottom:1px solid var(--line)}
+/* the case file on the left, the collection in figures on the right, and the
+   two paths on a line of their own beneath, where they can be as long as they are */
+.mast-body{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 40px;align-items:center}
+/* the case is the title; what is known about the examination sits in one line under it */
+.case-id{margin:0;font:600 22px/1.2 var(--sans);letter-spacing:-.3px;color:var(--ink);
+overflow-wrap:anywhere}
+.facts.meta{display:flex;flex-wrap:wrap;gap:4px 20px;margin-top:7px;font-size:var(--t-small)}
+.facts.meta>div{display:flex;gap:8px;align-items:baseline;min-width:0}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:7px 18px;
+justify-content:start;font-size:var(--t-body);align-content:end}
 .facts dt{font:500 var(--t-label)/1.5 var(--sans);letter-spacing:var(--track);
 text-transform:uppercase;color:var(--faint)}
-.facts dd{color:var(--ink);overflow-wrap:anywhere}
+.facts dd{color:var(--ink);white-space:nowrap}
+.facts.paths{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
+grid-template-columns:auto minmax(0,1fr);gap:3px 18px}
+.facts.paths dd{font:400 var(--t-small)/1.5 var(--mono);color:var(--ink-2);white-space:normal;
+overflow-wrap:anywhere}
+/* figures, not tiles: a number, its name, a hairline between neighbours, and
+   each one a link to the place where it was counted */
+.figures{display:flex;justify-content:flex-end;margin:0;padding:0;list-style:none}
+.figures li{padding:0 22px;border-left:1px solid var(--line)}
+.figures li:first-child{border-left:0;padding-left:0}
+.figures li:last-child{padding-right:0}
+.figures a{display:block;color:inherit;text-decoration:none}
+.figures .n{display:block;font:300 26px/1 var(--mono);color:var(--ink);letter-spacing:-.02em;
+white-space:nowrap}
+.figures .n.alert{color:var(--alert)}.figures .n.activity{color:var(--activity)}
+.figures .label{display:block;margin-top:6px;white-space:nowrap}
+.figures a:hover .n{color:var(--accent)}.figures a:hover .label{color:var(--ink-2)}
 /* nav */
 .nav{position:sticky;top:0;z-index:30;height:var(--nav);padding:0 var(--gutter);
 display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;
@@ -335,7 +312,7 @@ display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
 .nav .home{padding:0 14px 0 0}.nav .home .mark{width:15px;height:21px}
 .nav-actions{display:none;gap:6px;align-items:center;flex:none;padding-left:10px}
 .js .nav-actions{display:flex}
-/* the workspace: a rail that stays, and the work beside it */
+/* shared report container */
 .shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);align-items:start}
 .rail{position:sticky;top:var(--nav);max-height:calc(100vh - var(--nav));overflow:auto;
 border-right:1px solid var(--line);background:var(--surface);padding-bottom:18px}
@@ -391,19 +368,20 @@ font-size:var(--t-small);color:var(--ink-2);border-left:2px solid transparent}
 .tree a[data-state=none] .dot{background:transparent;box-shadow:inset 0 0 0 1px var(--line-2)}
 .tree a[aria-current=true]{background:var(--surface-2);border-left-color:var(--accent);color:var(--ink)}
 /* sections */
-main{padding:0 var(--gutter) 40px;counter-reset:sec;min-width:0}
+main{padding:0 var(--gutter) 28px;min-width:0}
 /* Only the report's own sections are numbered. A frame holds panels that are
    sections of their own, and counting those numbered the document 213. */
-main>section{padding:40px 0 8px;counter-increment:sec}
-main>section.bare{counter-increment:none;padding-top:14px}
+.view>section{padding:26px 0 8px}
+.view>section.bare{padding-top:14px}
 .js .frame-head{display:none}
 .deck-id{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}
 .deck-id b{font:500 var(--t-lead)/1.3 var(--sans);color:var(--ink);white-space:nowrap;
 min-width:0;overflow:hidden;text-overflow:ellipsis}
 .deck-id .path{font:400 var(--t-label)/1.5 var(--mono);color:var(--faint);
 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-main>section:first-child{padding-top:28px}
-.h{display:flex;align-items:baseline;gap:14px;margin:0 0 18px;flex-wrap:wrap}
+.view>section:first-child{padding-top:20px}
+.h{position:relative;display:flex;align-items:center;gap:12px;margin:0 0 14px;flex-wrap:wrap}
+.h .caution{top:calc(100% - 6px)}
 .js .h h2{cursor:pointer}
 .fold{display:none;align-self:center;width:22px;height:22px;margin:0 -2px 0 -6px;
 border-radius:var(--r);color:var(--faint);align-items:center;justify-content:center;flex:none}
@@ -414,8 +392,6 @@ section.folded .fold .ic{transform:none}
 section.folded .sec-body{display:none}
 section.folded .h{margin-bottom:0}section.folded{padding-bottom:28px}
 .h h2{font:600 var(--t-h2)/1.25 var(--sans);letter-spacing:-.25px}
-.h h2:before{content:counter(sec,decimal-leading-zero);color:var(--accent);
-font:400 var(--t-label)/1 var(--mono);letter-spacing:var(--track);margin-right:13px;vertical-align:3px}
 .h .n{color:var(--accent);font-size:var(--t-small)}
 h3{font:500 var(--t-label)/1.4 var(--sans);letter-spacing:var(--track);text-transform:uppercase;
 color:var(--muted);margin:0 0 9px}
@@ -476,11 +452,16 @@ text-transform:uppercase;color:var(--muted);border:1px solid var(--line-2);borde
    short one leaves a hole beside a long one. Columns pack instead: each panel
    drops under the last one in its column. What it costs is reading order,
    which becomes column by column rather than row by row. */
-.panels{column-count:var(--cols);column-gap:12px}
-.panels>.panel{break-inside:avoid;margin-bottom:12px}
+/* the panels stand on a grid in the order the rail's tree lists them, each
+   taking half a row, a third of one, or the whole of it */
+.panels{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.panels>.panel{break-inside:avoid;grid-column:span 3;min-width:0}
+.panels>.panel.third{grid-column:span 2}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
 display:flex;flex-direction:column;min-width:0;overflow:hidden}
-.panel.wide{column-span:all}
+.panel.wide{grid-column:1/-1}
+/* one panel to a row, at the reader's request, whatever the width says */
+body.single .panels>.panel,body.single .panels>.panel.third{grid-column:1/-1}
 /* Two frames, and never the same frame. A solid border with corner marks says
    the pixels inside line up with the image; a dashed border says they do
    not, because a chart describes an image without standing on it. A reader
@@ -594,9 +575,9 @@ padding:12px;border-top:1px solid var(--line)}
 .matrices .label{display:block;margin-bottom:5px}
 .matrix{font:400 11px/1.45 var(--mono);color:var(--ink-2);background:var(--sunken);
 border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;overflow-x:auto;margin:0}
-/* the metadata table's own bar: a filter, the blocks, and the switches a forensic
+/* the evidence table's own bar: a filter, the categories, and the switches a forensic
    table is read with */
-.meta-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;
+.meta-bar{position:relative;display:flex;align-items:center;gap:8px;padding:8px 12px;
 border-bottom:1px solid var(--line);flex-wrap:wrap}
 .search{display:flex;align-items:center;gap:8px;flex:1;min-width:240px;
 border:1px solid var(--line-2);border-radius:var(--r);padding:0 10px;height:30px;
@@ -613,19 +594,41 @@ font:12.5px var(--sans);outline:none}
 footer{display:flex;flex-wrap:wrap;gap:6px 22px;padding:18px var(--gutter) 26px;
 border-top:1px solid var(--line);color:var(--faint);font:400 var(--t-label)/1.6 var(--mono)}
 .to-top{position:fixed;right:18px;bottom:18px;z-index:40;background:var(--surface-2)}
+@media(max-width:1380px){.panels>.panel.third{grid-column:span 3}}
 @media(max-width:1080px){
 .shell{grid-template-columns:minmax(0,1fr)}
 .rail{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line);
 display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));align-items:start}
 .rail-block{border-bottom:0;border-right:1px solid var(--line)}
-:root{--cols:1}
+.mast-body{grid-template-columns:1fr;gap:10px}
 }
 @media(max-width:760px){
-.mast-body{grid-template-columns:1fr;gap:16px}
-.mast .mark{max-height:72px}
-.rail{grid-template-columns:1fr}
-.rail-block{border-right:0;border-bottom:1px solid var(--line)}
-.panels{column-count:1}
+.mast-body{grid-template-columns:1fr;gap:12px}
+.facts{grid-template-columns:auto minmax(0,1fr)}
+.facts dd{white-space:normal;overflow-wrap:anywhere}
+.bar{flex-wrap:wrap;padding:6px 12px}.bar .fam{flex-basis:100%;white-space:normal}
+/* On a phone the rail cannot be a column beside the work, and laid above it
+   at full length it puts the whole roll between the reader and the first
+   image. The roll becomes a strip swiped sideways, the tree a row of chips,
+   and the rail ends within one screen with the work directly under it. */
+.rail{grid-template-columns:minmax(0,1fr)}
+.rail-block{min-width:0;border-right:0;border-bottom:1px solid var(--line);padding-top:10px}
+.roll{display:flex;overflow-x:auto;gap:0;padding:0 8px 8px;scroll-snap-type:x proximity}
+.roll li{flex:none;width:132px;scroll-snap-align:start}
+.roll li a{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"thumb" "nm" "sub" "st";
+gap:3px 0;padding:6px;border-left:0;border-bottom:0;border-top:2px solid transparent}
+.roll li a[aria-current=true]{border-left-color:transparent;border-top-color:var(--accent)}
+.roll .no{display:none}
+.roll .th{grid-row:auto;width:100%;height:80px}
+.roll .st{margin-top:0}
+.tree{display:flex;flex-wrap:wrap;gap:4px 6px;padding:0 12px 10px}
+.tree>li{display:contents}
+.tree .cat{display:inline-flex;align-items:center;padding:4px 2px 4px 0}
+.tree ul{display:contents}
+.tree a,.tree span.leaf{padding:3px 8px;border:1px solid var(--line);border-radius:999px;
+border-left-width:1px;gap:6px}
+.tree a[aria-current=true]{border-color:var(--accent)}
+.panels>.panel,.panels>.panel.third{grid-column:1/-1}
 .image-stage{min-height:200px;padding:10px}
 .deck-id .path{display:none}
 .image-stage>.reg{width:min(100%,calc(clamp(180px,42vh,420px) * var(--arn,1.3333)))}
@@ -642,12 +645,14 @@ display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));align-item
 [data-pane] .pane-name{display:block}
 html,body{background:#fff;color:#111}
 .shell{display:block}
-.panels{column-count:2}
+.panels{display:block}.panels>.panel{margin-bottom:12px}
 .panel,.card,.stat,.keyfacts{border-color:#bbb;background:#fff;break-inside:avoid}
 .bar,th{background:#f4f4f4;color:#333;border-color:#999}
-.bar .t,.label,.stat .label{color:#333}
+.bar .t,.label{color:#333}
 .reading,.body,td{color:#111}
-.caution{color:#444;border-top-color:#999}
+.why{display:none}
+.caution{display:block;position:static;width:auto;padding:8px 12px;background:none;
+border:0;border-top:1px dashed #999;border-radius:0;box-shadow:none;color:#444}
 .caution b{color:#7a5a1a}
 .foot{color:#555;border-top-color:#999}
 .small,.hex .o,td.m,td.dim,.stat .sub,.brow .n,.facts dt,.cap{color:#555}
@@ -666,26 +671,24 @@ a{color:#111}
 }
 
 /* the case summary: what the collection is, before any one image */
-.section{padding:26px var(--gutter);border-top:1px solid var(--line)}
-.section:first-child{border-top:0}
-.section-h{display:flex;align-items:baseline;gap:14px;margin-bottom:16px;flex-wrap:wrap}
-.section-h h2{font:500 var(--t-h2)/1.2 var(--sans)}
-.section-h .small{font-size:var(--t-small);max-width:86ch}
 .small{font-size:var(--t-small);color:var(--muted)}
 .label{font:600 var(--t-label)/1 var(--sans);letter-spacing:var(--track);text-transform:uppercase;color:var(--muted)}
 .sp{flex:1;min-width:0}
-.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:var(--line);
-border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.stat{background:var(--surface);padding:14px 16px;min-width:0}
-.stat .n{font:300 30px/1 var(--mono);color:var(--ink);letter-spacing:-.02em}
-.stat .n em{font-style:normal;color:var(--alert)}
-.stat .label{display:block;margin-top:8px}
-.stat .sub{font:11px/1.45 var(--mono);color:var(--faint);margin-top:5px;overflow-wrap:anywhere}
-/* two columns, never three: geolocation takes the row under them */
-.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px;align-items:start}
-.bars{display:flex;flex-direction:column;gap:6px}
+/* a file name is one line; a table with a long one scrolls sideways rather than folds it */
+td.file{white-space:nowrap}
+/* the capture-time chart: one dot per image, a link each, stacked where they meet */
+.times .scroll svg{display:block;min-width:640px}
+.times svg a:hover circle,.times svg a:focus circle{stroke:var(--ink);stroke-width:1.5}
+/* two cards to a row, the same height: the list that outgrows its neighbour scrolls */
+.summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+.summary-grid>.panel{display:flex;flex-direction:column;min-width:0}
+.summary-grid>.panel>.body{flex:1 1 auto}
+.stack{display:grid;gap:12px}
+.bars{column-count:2;column-gap:32px}
+.brow{break-inside:avoid;margin-bottom:6px}
 .brow{display:grid;grid-template-columns:150px 1fr 36px;gap:10px;align-items:center;font-size:var(--t-small)}
 .brow .k{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .k a{color:inherit}.brow .k a:hover{color:var(--accent);text-decoration:none}
 .brow .b{height:8px;background:var(--surface-2);border-radius:1px;overflow:hidden}
 .brow .b i{display:block;height:100%;background:var(--line-3)}
 .brow.none .b i{background:var(--line-2)}
@@ -694,6 +697,8 @@ border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 [data-pane]+[data-pane]{margin-top:14px}
 .js [data-pane]+[data-pane]{margin-top:0}
 [data-pane] .pane-name{display:block;margin-bottom:6px}
+#geolocation-body [data-pane] svg{display:block;width:100%;height:100%}
+#geolocation-body svg a:hover circle{stroke:var(--ink)}
 .js [data-pane] .pane-name{display:none}
 /* the panel shape the summary's cards use */
 .bar{display:flex;align-items:center;gap:10px;padding:0 12px;min-height:38px;
@@ -708,10 +713,24 @@ letter-spacing:var(--track);text-transform:uppercase;color:var(--brand)}
 .body{padding:12px;min-width:0}
 .body.flush{padding:0;overflow-x:auto}
 .body.sunk{padding:0;background:var(--sunken)}
-.caution{padding:8px 12px;border-top:1px dashed var(--line-2);font-size:var(--t-small);
-color:var(--muted);line-height:1.45}
-.caution b{color:var(--activity);font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-font-size:10.5px;margin-right:6px}
+/* a limitation stands behind a mark in the bar and opens on hover or focus.
+   Under an analytical output it stays in view, because there it says how to
+   read the picture. Print lays every one of them back under its panel. */
+.bar{position:relative}
+.why{display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;
+margin:0 2px;border:1px solid var(--line-2);border-radius:50%;background:transparent;
+color:var(--faint);font:600 10px/1 var(--mono);cursor:help;padding:0}
+.why:hover,.why:focus-visible{color:var(--activity);border-color:var(--activity);outline:none}
+.caution{display:none;position:absolute;left:8px;top:calc(100% + 6px);z-index:25;
+width:min(52ch,calc(100% - 16px));padding:10px 12px;background:var(--surface-2);
+border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 10px 28px rgba(0,0,0,.5);
+font:400 var(--t-small)/1.55 var(--sans);color:var(--ink-2);text-align:left;white-space:normal;
+letter-spacing:0;text-transform:none}
+.why:hover+.caution,.why:focus+.caution,.why:focus-visible+.caution,.caution:hover{display:block}
+.caution.shown{display:block;position:static;width:auto;padding:8px 12px;background:none;
+border:0;border-top:1px dashed var(--line-2);border-radius:0;box-shadow:none}
+.caution b{display:block;margin-bottom:4px;color:var(--activity);font:600 var(--t-label)/1 var(--sans);
+letter-spacing:.08em;text-transform:uppercase}
 .foot{display:flex;align-items:center;gap:16px;padding:6px 12px;min-height:30px;
 border-top:1px solid var(--line);font:11px/1.5 var(--mono);color:var(--faint);flex-wrap:wrap}
 .seg{display:flex;gap:2px;flex-wrap:wrap}
@@ -722,8 +741,8 @@ color:var(--ink-2);font:500 12px/1 var(--sans);white-space:nowrap}
 .btn[aria-pressed=true]{border-color:var(--accent);color:var(--ink);background:var(--brand-soft)}
 /* geolocation at full size */
 .site-body{height:min(60vh,560px)}
-.world-body{height:180px}
-.region-body{height:200px}
+.world-body{height:min(52vh,460px)}
+.region-body{height:min(52vh,460px)}
 .scroll{overflow:auto;max-height:560px}
 .blk{display:inline-block;padding:1px 6px;border-radius:2px;font:600 10.5px/1.5 var(--mono);
 letter-spacing:.06em;white-space:nowrap}
@@ -734,23 +753,109 @@ letter-spacing:.06em;white-space:nowrap}
 .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
 .summary-grid{grid-template-columns:minmax(0,1fr)}
 }
-@media(max-width:760px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.figures{flex-wrap:wrap;justify-content:flex-start;gap:10px 0}
+.figures li{padding:0 14px}.figures li:first-child{padding-left:0}.bars{column-count:1}}
 
 /* two views: the collection, and one image */
 .js .view:not(.on){display:none}
 .view{min-width:0}
-.scope{padding:20px var(--gutter);border-top:1px solid var(--line);background:var(--surface);
-display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px 40px;align-items:start}
-.scope p{max-width:92ch;font-size:var(--t-small);color:var(--muted);line-height:1.7}
-.scope b{display:block;font:600 var(--t-label)/1.4 var(--sans);letter-spacing:var(--track);
-text-transform:uppercase;color:var(--activity);margin-bottom:5px}
-.scope .facts{display:grid;grid-template-columns:auto auto;gap:4px 18px;font-size:var(--t-small)}
-.scope .facts dt{color:var(--faint);letter-spacing:.06em;text-transform:uppercase;
-font:600 var(--t-label)/1.5 var(--sans);padding-top:2px}
-.scope .facts dd{font-family:var(--mono);color:var(--ink-2);overflow-wrap:anywhere}
-@media(max-width:1000px){.scope{grid-template-columns:minmax(0,1fr)}}
 @media print{.js .view:not(.on){display:block}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+
+.time-image{display:flex;align-items:center;gap:12px}.time-image img{width:52px;height:40px;object-fit:contain;background:var(--sunken);flex:none}
+#findings table{min-width:1000px}#coord-rows{min-width:920px}.time-list table{min-width:740px}
+/* Collection and detail are distinct reading widths. */
+body[data-view="summary"] .rail{display:none}
+body[data-view="summary"] .shell{display:block}
+body[data-view="summary"] main{padding:0 clamp(20px,4vw,64px) 80px}
+.view[data-view="summary"]{counter-reset:summary-section}
+.view[data-view="summary"]>section{padding:56px 0 8px;counter-increment:summary-section}
+.view[data-view="summary"]>section:first-child{padding-top:36px}
+.view[data-view="summary"]>section>.h{margin-bottom:22px}
+.view[data-view="summary"]>section>.h h2:before{content:counter(summary-section,decimal-leading-zero);color:var(--accent);font:400 11px var(--mono);letter-spacing:.1em;margin-right:13px;vertical-align:3px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+.cards a.card{color:inherit;text-decoration:none}.cards a.card:hover{background:var(--surface)}
+.cards .s{font:11px/1.5 var(--sans);color:var(--muted);margin-top:4px}
+.nav a[aria-current="true"]{color:var(--accent);box-shadow:inset 0 -2px var(--accent)}
+.m,td.m,.frame .m{white-space:nowrap;word-break:normal!important;overflow-wrap:normal!important}
+.frame table{table-layout:auto}.frame td:first-child{min-width:44px}
+.contacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:16px}
+.contact{min-width:0;border:1px solid var(--line);background:var(--surface)}
+.contact a{display:block;color:var(--ink-2);text-decoration:none;height:100%}
+.contact:hover{border-color:var(--accent)}
+.contact-image{height:148px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.contact-image img{width:100%;height:100%;object-fit:contain}
+.contact-image small{display:block;font-size:11px}
+.contact-caption{padding:12px;display:grid;grid-template-columns:auto 1fr;gap:5px 9px}
+.contact-caption b{font-size:12px;overflow-wrap:anywhere}.contact-caption small{grid-column:2;color:var(--muted)}
+.contact-caption .tag{grid-column:2;width:fit-content}
+.gallery-controls,.time-controls{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:14px 0}
+.gallery-controls label,.time-pick{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted)}
+.gallery-controls input,select{background:var(--surface);color:var(--ink);border:1px solid var(--line-2);padding:7px 10px;border-radius:3px;max-width:100%;font:inherit}
+#gallery-group{padding:12px;border-left:2px solid var(--accent);margin-bottom:12px;background:var(--brand-soft)}
+.time-years{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;padding:20px;border-bottom:1px solid var(--line)}
+.time-year{display:grid;gap:6px;text-align:left;padding:10px;background:transparent;border:1px solid transparent;border-radius:3px;color:var(--muted);cursor:pointer;font:12px var(--mono)}
+.time-year b{font-weight:500;color:var(--ink)}.time-year small{font:11px var(--sans);color:var(--muted)}
+.time-year meter{width:100%;height:6px;appearance:none;border:0;background:var(--line);border-radius:2px}
+.time-year meter::-webkit-meter-bar{background:var(--line);border:0;height:6px}.time-year meter::-webkit-meter-optimum-value{background:var(--metadata)}
+.time-year:hover,.time-year[aria-pressed="true"]{background:var(--surface-2);border-color:var(--accent)}
+.time-controls{padding:14px 20px}.time-list{max-height:420px;overflow:auto}
+.time-list th{position:sticky;top:0;background:var(--surface-2);z-index:1}
+.time-list td{padding:12px 16px}.time-list small,#coord-rows small{display:block;color:var(--muted);font-size:11px}
+.time-list time{white-space:nowrap;font:12px var(--mono)}
+.place-overview{display:grid;grid-template-columns:280px minmax(0,1fr);gap:26px;padding:20px;align-items:center;border-bottom:1px solid var(--line)}
+.place-world svg{display:block;width:100%;height:155px}.place-world{background:var(--sunken)}
+.place-title{font-size:18px;color:var(--ink);margin-bottom:5px}.place-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.place-buttons .btn{height:auto;min-height:40px;white-space:normal;text-align:left;padding:8px 12px}.place-buttons b{color:var(--accent);margin-left:6px}
+.place-pane{display:grid;grid-template-columns:minmax(0,1fr) 320px;min-width:0}
+.js .place-pane:not(.on){display:none}
+.place-plot{background:var(--sunken);min-width:0;padding:12px}.place-plot>svg{display:block;width:100%;height:360px}
+.place-plot>p{padding:4px 8px;overflow-wrap:anywhere}
+.place-list{border-left:1px solid var(--line);max-height:410px;overflow:auto}
+.place-list li{padding:14px 16px;border-bottom:1px solid var(--line)}
+.place-list li.selected{background:var(--brand-soft);box-shadow:inset 3px 0 var(--accent)}
+.place-select{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;width:100%}
+.place-select b{font-size:12px;overflow-wrap:anywhere}.place-select small{grid-column:2;font:11px var(--mono);color:var(--muted)}
+.place-list li>a{display:inline-block;font-size:11px;margin:8px 14px 0 0}
+.point-label{display:block}.place-plot a:hover .point-label,.place-plot a:focus .point-label,.place-plot a.selected .point-label{display:block}
+.place-plot a.selected circle{stroke:var(--accent);stroke-width:3;fill:var(--brand-soft)}
+.place-plot a{cursor:pointer}
+@media(max-width:760px){body[data-view="summary"] main{padding:20px 16px}.place-overview{grid-template-columns:1fr;gap:12px}.place-world svg{height:120px}.place-pane{grid-template-columns:1fr}.place-list{border-left:0;border-top:1px solid var(--line)}.contacts{grid-template-columns:repeat(2,minmax(0,1fr))}.contact-image{height:120px}.contact-caption{padding:8px}.gallery-controls label{flex-wrap:wrap}.gallery-controls input{width:180px}.place-plot>svg{height:280px}}
+@media print{.js .place-pane:not(.on){display:grid}.contact[hidden],.time-list tr[hidden]{display:revert!important}.time-list,.place-list{max-height:none;overflow:visible}.gallery-controls,.time-controls,.place-buttons{display:none}.contacts{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.shell{display:block}
+.inline-inspector{grid-column:1/-1;order:9999;min-width:0;border:1px solid var(--line-2);border-top:2px solid var(--accent);background:var(--bg);padding:0 18px 18px;scroll-margin-top:calc(var(--nav) + 12px);overflow-anchor:none}
+.js .inline-inspector{order:0}
+.js .inline-inspector:not(.open){display:none}
+.contact.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.contact a:focus-visible{outline-offset:-3px}
+.inline-inspector .deck{position:static;background:transparent;padding:14px 0;border-bottom:1px solid var(--line)}
+.detail-tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+.analysis-picker,.js .analysis-picker{display:block;margin:16px 0 20px;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.analysis-picker h4{font:500 var(--t-small)/1.5 var(--sans);color:var(--ink-2);margin:0 0 10px}
+.analysis-picker h4 span{color:var(--accent);margin-left:6px}
+.method-choices{display:flex;flex-wrap:wrap;gap:8px}
+.method-choices .method-choice{height:auto;min-height:36px;max-width:100%;padding:9px 12px;white-space:normal;text-align:left;line-height:1.4;justify-content:flex-start}
+.method-choice[aria-pressed="true"]{box-shadow:inset 3px 0 var(--accent)}
+.js .frame[data-detail-tab="overview"] .panels{grid-template-columns:minmax(0,1.3fr) minmax(280px,1fr)}
+.js .frame[data-detail-tab="overview"] .panels>.panel{grid-column:auto}
+.js .frame[data-detail-tab="metadata"] .panels,.js .frame[data-detail-tab="evidence"] .panels{grid-template-columns:minmax(0,1fr)}
+.frame .image-stage{max-height:65vh}
+.inline-inspector .lens,.js .frame[data-detail-tab="overview"] .blend{display:none}
+.js .frame[data-detail-tab="analysis"] .panels{grid-template-columns:repeat(2,minmax(0,1fr))}
+.js .frame[data-detail-tab="analysis"] .panels>.panel{grid-column:auto;order:1}
+.js .frame[data-detail-tab="analysis"] .panels>.panel[id$="-coverage"]{grid-column:1/-1;order:2}
+@media(max-width:760px){.inline-inspector{padding:0 10px 12px}.js .frame[data-detail-tab="overview"] .panels,.js .frame[data-detail-tab="analysis"] .panels{grid-template-columns:minmax(0,1fr)}.inline-inspector .deck-id{order:2;flex-basis:100%}.inline-inspector .deck-id b{white-space:normal}.detail-tabs{gap:5px}.detail-tabs .btn{padding:0 8px}}
+@media print{.inline-inspector,.js .inline-inspector:not(.open){display:block;border:0;padding:0}.inline-inspector .panel[hidden],.inline-inspector .keyfacts[hidden]{display:block!important}.detail-tabs,.analysis-picker{display:none!important}.inline-inspector .panels{display:block}.contact{break-inside:avoid}.contact.selected{box-shadow:none}.js .inline-inspector{order:9999}.inline-inspector .frame{break-before:page}}
+
+.gallery-layout{display:flex;gap:4px;margin-left:auto}
+.contacts.list-layout{grid-template-columns:minmax(0,1fr);gap:8px}
+.list-layout .contact>a{display:flex;align-items:center;min-width:0}
+.list-layout .contact-image{width:112px;height:80px;flex:none;border-right:1px solid var(--line)}
+.list-layout .contact-caption{display:grid;grid-template-columns:52px minmax(160px,1fr) minmax(120px,.5fr) auto;align-items:center;gap:6px 16px;flex:1;min-width:0;padding:10px 16px}
+.list-layout .contact-caption b{margin:0}.list-layout .contact-caption small{margin:0}
+.list-layout .contact-caption .tag{justify-self:start;margin:0}
+@media(max-width:760px){.list-layout .contact-image{width:80px;height:80px}.list-layout .contact-caption{grid-template-columns:38px minmax(0,1fr);gap:3px 8px;padding:8px}.list-layout .contact-caption small,.list-layout .contact-caption .tag{grid-column:2}.gallery-layout{margin-left:0}}
+
 """
 
 SCRIPT = r"""
@@ -760,7 +865,7 @@ SCRIPT = r"""
 
   // A section folds from its own heading, so a long report is read a part at a
   // time. Folding hides; nothing is removed, and print puts it all back.
-  all("main > section").forEach(function(section){
+  all("main section[id]").forEach(function(section){
     var fold=section.querySelector(".h .fold"),title=section.querySelector(".h h2");
     if(!fold){return}
     var turn=function(){
@@ -796,7 +901,7 @@ SCRIPT = r"""
       stage.style.setProperty("--blend",value/100);
       readout.textContent=value+"%";
       swaps.forEach(function(button){
-        var pressed=!solo&&over.hidden===false&&(button.getAttribute("data-swap")==="original"?value===0:value===100);
+        var pressed=!solo&&over.hidden===false&&(button.getAttribute("data-swap")==="working"?value===0:value===100);
         button.setAttribute("aria-pressed",String(pressed));
       });
     }
@@ -844,116 +949,122 @@ SCRIPT = r"""
     swaps.forEach(function(button){
       button.addEventListener("click",function(){
         if(slider.disabled){return}
-        slider.value=button.getAttribute("data-swap")==="original"?0:100;
+        slider.value=button.getAttribute("data-swap")==="working"?0:100;
         opacity();
       });
     });
     put(null);
   });
 
-  // One image at a time, with the rail saying which and the analysis tree
-  // saying what this one has. Without this the page is the same
-  // document from first to last, which is what print goes back to.
-  var frames=all(".frame"),
-      roll=all(".roll a"),
-      leaves=all(".tree a[data-tool]"),
-      deck=document.querySelector(".deck"),
-      at=document.getElementById("deck-at"),
-      named=document.getElementById("deck-name"),
-      where=document.getElementById("deck-path"),
-      kind=document.getElementById("deck-format"),
-      back=document.getElementById("deck-prev"),
-      on=document.getElementById("deck-next"),
-      current=-1;
-  function show(index,jump){
-    if(!frames.length){return}
-    index=Math.max(0,Math.min(frames.length-1,index));
-    current=index;
-    frames.forEach(function(frame,which){
-      if(which===index){frame.setAttribute("data-current","")}else{frame.removeAttribute("data-current")}
-    });
-    roll.forEach(function(link,which){link.setAttribute("aria-current",String(which===index))});
-    var frame=frames[index],held=(frame.getAttribute("data-has")||"").split(" ");
-    leaves.forEach(function(leaf){
-      var key=leaf.getAttribute("data-tool"),has=held.indexOf(key)>=0;
-      leaf.setAttribute("data-state",has?"has":"none");
-      leaf.setAttribute("href",has?"#"+frame.id+"-"+key:"#images");
-      leaf.setAttribute("aria-current","false");
-      leaf.setAttribute("title",has?"":"not produced for this image");
-    });
-    if(at){at.textContent="#"+frame.getAttribute("data-no")+" of "+frames.length}
-    if(named){named.textContent=frame.getAttribute("data-name")}
-    if(where){where.textContent=frame.getAttribute("data-path")}
-    if(kind){kind.textContent=frame.getAttribute("data-format")}
-    if(back){back.disabled=index===0}
-    if(on){on.disabled=index===frames.length-1}
-    if(jump&&deck){deck.scrollIntoView({block:"start"})}
+  var frames=all(".frame"),contacts=all("[data-member]"),
+      inspector=document.getElementById("image-inspector"),current=-1,
+      back=document.getElementById("deck-prev"),on=document.getElementById("deck-next");
+  function unfold(section){
+    if(!section){return}section.classList.remove("folded");
+    var button=section.querySelector(".fold");if(button){button.setAttribute("aria-expanded","true")}
   }
-  roll.forEach(function(link,which){
-    link.addEventListener("click",function(event){
-      event.preventDefault();
-      openView("images");
-      show(which,true);
+  function placeInspector(card){
+    // Hide only for synchronous measurement, so it cannot split the thumbnail row.
+    inspector.classList.remove("open");
+    var top=card.offsetTop,last=card;
+    contacts.forEach(function(item){if(!item.hidden&&item.offsetTop===top){last=item}});
+    last.after(inspector);inspector.classList.add("open");
+  }
+  function detailTab(frame,tab,target){
+    frame.setAttribute("data-detail-tab",tab);
+    all("[data-detail-tab]",frame).forEach(function(button){button.setAttribute("aria-pressed",String(button.getAttribute("data-detail-tab")===tab))});
+    var picks=all("button[data-output]",frame),selected=frame.getAttribute("data-selected-output")||(picks[0]?picks[0].getAttribute("data-output"):"");
+    if(target&&picks.some(function(button){return frame.id+"-"+button.getAttribute("data-output")===target.id})){selected=target.id.slice(frame.id.length+1)}
+    frame.setAttribute("data-selected-output",selected);
+    picks.forEach(function(button){button.setAttribute("aria-pressed",String(tab==="analysis"&&button.getAttribute("data-output")===selected))});
+    all(".panels > .panel",frame).forEach(function(panel){
+      var group=panel.getAttribute("data-detail-group")||"",show=group.split(" ").indexOf(tab)>=0;
+      if(show&&group==="analysis"&&selected){show=panel.id===frame.id+"-"+selected}
+      panel.hidden=!show;
     });
+    var facts=frame.querySelector(".keyfacts");if(facts){facts.hidden=tab!=="overview"}
+  }
+  all("[data-gallery-layout]").forEach(function(button){button.addEventListener("click",function(){
+    var selected=document.querySelector(".contact.selected"),before=selected?selected.getBoundingClientRect().top:null;
+    document.querySelector(".contacts").classList.toggle("list-layout",button.getAttribute("data-gallery-layout")==="list");
+    all("[data-gallery-layout]").forEach(function(other){other.setAttribute("aria-pressed",String(other===button))});
+    if(selected&&inspector.classList.contains("open")){placeInspector(selected);window.scrollBy({top:selected.getBoundingClientRect().top-before,behavior:"instant"})}
+  })});
+  function visibleFrames(){return frames.filter(function(frame){return contacts.some(function(card){return !card.hidden&&Number(card.getAttribute("data-member"))===Number(frame.getAttribute("data-no"))})})}
+  function show(index,jump,inner){
+    if(!frames.length){return}
+    var frame=frames[index],card=contacts.filter(function(item){return Number(item.getAttribute("data-member"))===Number(frame.getAttribute("data-no"))})[0];
+    if(!card){return}
+    if(card.hidden){
+      // An explicit evidence link may refer to an image outside the current filter.
+      // Reset visibly rather than silently showing a card that contradicts the filter.
+      document.getElementById("gallery-reset").click();
+    }
+    unfold(document.getElementById("gallery"));
+    var before=card.getBoundingClientRect().top;
+    current=index;frames.forEach(function(item){item.toggleAttribute("data-current",item===frame)});
+    contacts.forEach(function(item){var selected=item===card;item.classList.toggle("selected",selected);item.querySelector("a").setAttribute("aria-expanded",String(selected))});
+    placeInspector(card);
+    document.getElementById("deck-at").textContent="#"+frame.getAttribute("data-no");
+    document.getElementById("deck-name").textContent=frame.getAttribute("data-name");
+    document.getElementById("deck-path").textContent=frame.getAttribute("data-path");
+    document.getElementById("deck-format").textContent=frame.getAttribute("data-format");
+    var visible=visibleFrames(),position=visible.indexOf(frame);
+    back.disabled=position<=0;on.disabled=position===visible.length-1;
+    var panel=inner?inner.closest("[data-detail-group]"):null;
+    detailTab(frame,panel?panel.getAttribute("data-detail-group").split(" ")[0]:"overview",panel);
+    openView("summary",document.querySelector('.nav a[href="#gallery"]'));
+    if(jump){(inner||inspector).scrollIntoView({block:"start"})}
+    else{window.scrollBy({top:card.getBoundingClientRect().top-before,behavior:"instant"})}
+  }
+  function closeInspector(focus){
+    inspector.classList.remove("open");
+    contacts.forEach(function(card){card.classList.remove("selected");card.querySelector("a").setAttribute("aria-expanded","false")});
+    if(focus&&current>=0){var link=document.querySelector('.contact a[href="#'+frames[current].id+'"]');if(link){link.focus({preventScroll:true})}}
+  }
+  frames.forEach(function(frame){
+    all("button[data-detail-tab]",frame).forEach(function(button){button.addEventListener("click",function(){detailTab(frame,button.getAttribute("data-detail-tab"))})});
+    all("button[data-output]",frame).forEach(function(button){button.addEventListener("click",function(){
+      frame.setAttribute("data-selected-output",button.getAttribute("data-output"));detailTab(frame,"analysis");
+    })});
   });
-  leaves.forEach(function(leaf){
-    leaf.addEventListener("click",function(){
-      leaves.forEach(function(other){other.setAttribute("aria-current",String(other===leaf))});
-    });
-  });
-  if(back){back.addEventListener("click",function(){show(current-1,true)})}
-  if(on){on.addEventListener("click",function(){show(current+1,true)})}
-  all("[data-cols]").forEach(function(button){
-    button.addEventListener("click",function(){
-      document.documentElement.style.setProperty("--cols",button.getAttribute("data-cols"));
-      all("[data-cols]").forEach(function(other){
-        other.setAttribute("aria-pressed",String(other===button));
-      });
-    });
-  });
-  // A reader with an image on screen reaches for the arrow keys before the
-  // buttons, unless they are typing into the filter.
+  function adjacent(step){
+    var visible=visibleFrames(),frame=visible[visible.indexOf(frames[current])+step];
+    if(frame){history.pushState(null,"","#"+frame.id);show(frames.indexOf(frame),true)}
+  }
+  if(back){back.addEventListener("click",function(){adjacent(-1)})}
+  if(on){on.addEventListener("click",function(){adjacent(1)})}
+  var close=document.getElementById("inspector-close");
+  if(close){close.addEventListener("click",function(){closeInspector(true);history.pushState(null,"","#gallery")})}
   document.addEventListener("keydown",function(event){
-    var tag=(event.target.tagName||"").toLowerCase();
-    if(tag==="input"||tag==="textarea"||event.metaKey||event.ctrlKey||event.altKey){return}
-    if(event.key==="ArrowLeft"){show(current-1,true)}
-    else if(event.key==="ArrowRight"){show(current+1,true)}
+    if(event.key==="Escape"&&inspector.classList.contains("open")&&inspector.contains(event.target)){close.click()}
   });
-  // A link into an image, from the rail or from the address bar, has to open
-  // that image rather than scroll to something that is not on screen.
-  // A panel or a finding inside it is scrolled to itself rather than to the
-  // top of its image, or a link to F03 lands a screen above the row it names.
   function fromHash(){
     var id=(location.hash||"").slice(1);
-    if(!id){return false}
     for(var index=0;index<frames.length;index++){
-      if(frames[index].id===id||id.indexOf(frames[index].id+"-")===0){
-        var inner=id!==frames[index].id?document.getElementById(id):null;
-        openView("images");
-        show(index,!inner);
-        if(inner){
-          // Straight there: the view has just changed under the reader, so no
-          // scroll position is worth animating away from, and a page still
-          // laying itself out would leave a smooth scroll short of the row.
-          var root=document.documentElement.style;
-          root.scrollBehavior="auto";
-          inner.scrollIntoView({block:"start"});
-          root.scrollBehavior="";
-        }
-        return true;
-      }
+      if(frames[index].id===id||id.indexOf(frames[index].id+"-")===0){show(index,true,id===frames[index].id?null:document.getElementById(id));return true}
     }
+    if(inspector){closeInspector(false)}
+    var destination=document.getElementById(id==="images"?"gallery":id);
+    if(destination){unfold(destination.closest("section"));openView("summary",document.querySelector('.nav a[href="#'+id+'"]'));destination.scrollIntoView({block:"start"});return true}
     return false;
   }
-  if(frames.length){show(0,false)}
   window.addEventListener("hashchange",fromHash);
-  // A link to what is already in the address bar changes nothing the browser
-  // reports, so a reader going back to a finding they have read would click
-  // and see nothing happen.
+  window.addEventListener("popstate",fromHash);
   document.addEventListener("click",function(event){
     var link=event.target.closest?event.target.closest('a[href^="#photo-"]'):null;
-    if(link&&location.hash===link.getAttribute("href")){event.preventDefault();fromHash()}
+    if(!link){return}
+    var id=link.getAttribute("href").slice(1),index=frames.findIndex(function(frame){return frame.id===id||id.indexOf(frame.id+"-")===0});
+    if(index<0){return}
+    event.preventDefault();history.pushState(null,"","#"+id);
+    show(index,!link.closest(".contact"),id===frames[index].id?null:document.getElementById(id));
   });
+  if(window.ResizeObserver&&inspector){
+    var galleryWidth=0;new ResizeObserver(function(entries){
+      var width=entries[0].contentRect.width;if(width===galleryWidth){return}galleryWidth=width;
+      var selected=document.querySelector(".contact.selected");if(selected&&inspector.classList.contains("open")){placeInspector(selected)}
+    }).observe(document.querySelector(".contacts"));
+  }
 
   // What the stage is doing to the picture, said in the strip under it.
   all(".image-stage").forEach(function(stage){
@@ -979,30 +1090,15 @@ SCRIPT = r"""
   });
 
 
-  // Two views, because a report is about a collection and about one image
-  // at a time, and those are different things to read. Without a script both are
-  // on the page one after the other, which is what print goes back to.
-  var views=all(".view"),navLinks=all("[data-goto]");
-  // One link is current, not every link into the view: four sections share the
-  // summary, and a screen reader told all four are current is told nothing.
+  var navLinks=all(".nav [data-goto]");
   function openView(name,chosen){
-    views.forEach(function(view){view.classList.toggle("on",view.getAttribute("data-view")===name)});
-    var current=chosen||navLinks.filter(function(link){return link.getAttribute("data-goto")===name})[0];
-    navLinks.forEach(function(link){link.setAttribute("aria-current",String(link===current))});
+    document.body.setAttribute("data-view","summary");
+    if(chosen){navLinks.forEach(function(link){link.setAttribute("aria-current",String(link===chosen))})}
   }
-  navLinks.forEach(function(link){
-    link.addEventListener("click",function(event){
-      var name=link.getAttribute("data-goto"),to=link.getAttribute("href").slice(1);
-      event.preventDefault();
-      openView(name,link);
-      var target=to?document.getElementById(to):null;
-      if(target){target.scrollIntoView({block:"start"})}else{window.scrollTo({top:0})}
-    });
-  });
-  // A link into an image, from a note or a bookmark, opens on that image. The
-  // summary is where a reader starts only when the address asked for nothing.
-  if(!fromHash()){openView("summary")}
-
+  all("[data-goto]").forEach(function(link){link.addEventListener("click",function(event){
+    event.preventDefault();history.pushState(null,"",link.getAttribute("href"));fromHash();
+  })});
+  openView("summary",navLinks[0]);
   // One axis of a cluster, one scale of geolocation. Without a script every
   // one of them is on the page; this only decides which is in front.
   all("[data-switch]").forEach(function(group){
@@ -1019,7 +1115,7 @@ SCRIPT = r"""
     if(buttons.length){choose(buttons[0].getAttribute("data-key"))}
   });
 
-  // The metadata table. Without a script the table is delivered whole; this hides
+  // The evidence table. Without a script the table is delivered whole; this hides
   // rows, and says how many it left.
   var search=document.getElementById("meta-filter");
   if(search){
@@ -1052,8 +1148,9 @@ SCRIPT = r"""
         return all("td",row).map(function(cell){return cell.textContent.trim()});
       })}
       rows.forEach(function(row,index){
-        var hit=!plain&&!test;
-        if(!hit){
+        var fileQuery=/^#(\d+)$/.exec(query);
+        var hit=fileQuery?Number(row.getAttribute("data-image"))===Number(fileQuery[1]):!plain&&!test;
+        if(!hit&&!fileQuery){
           hit=cells[index].some(function(value){
             if(test){return test.test(value)}
             return (matchCase?value:value.toLowerCase()).indexOf(plain)>=0;
@@ -1089,10 +1186,14 @@ SCRIPT = r"""
         openView("summary");
         search.value=link.getAttribute("data-filter");
         if(expr){expr.setAttribute("aria-pressed","false")}
+        if(cased){cased.setAttribute("aria-pressed","false")}
+        if(whole){whole.setAttribute("aria-pressed","false")}
+        if(onlyBad){onlyBad.setAttribute("aria-pressed","false")}
+        history.pushState(null,"","#evidence");
         block="";
         blocks.forEach(function(other,index){other.setAttribute("aria-pressed",String(index===0))});
         sift();
-        var seen=document.getElementById("metadata");
+        var seen=document.getElementById("evidence");
         if(seen){seen.scrollIntoView({block:"start"})}
       });
     });
@@ -1112,13 +1213,73 @@ SCRIPT = r"""
         }).join("\n");
       }else{text=target.textContent.trim()}
       navigator.clipboard.writeText(text).then(function(){
-        var said=button.querySelector("span");
-        if(!said){return}
-        var was=said.textContent;said.textContent="copied";
-        setTimeout(function(){said.textContent=was},1400);
+        var use=button.querySelector("use");
+        if(!use){return}
+        var was=use.getAttribute("href");use.setAttribute("href","#i-check");
+        setTimeout(function(){use.setAttribute("href",was)},1400);
       },function(){});
     });
   });
+
+  var members=null,
+      gallerySearch=document.getElementById("gallery-search"),
+      galleryFilter=document.getElementById("gallery-filter"),
+      groupNote=document.getElementById("gallery-group");
+  function filterGallery(){
+    closeInspector(false);
+    var query=gallerySearch.value.toLowerCase(),mode=galleryFilter.value,kept=0;
+    contacts.forEach(function(card){
+      var hit=(!members||members.indexOf(card.getAttribute("data-member"))>=0)&&card.textContent.toLowerCase().indexOf(query)>=0;
+      if(mode==="flagged"){hit=hit&&!!card.getAttribute("data-flag")}
+      if(mode==="geo"){hit=hit&&card.getAttribute("data-geo")==="true"}
+      if(mode==="decoded"){hit=hit&&card.getAttribute("data-decoded")==="true"}
+      if(mode==="undecoded"){hit=hit&&card.getAttribute("data-decoded")==="false"}
+      card.hidden=!hit;if(hit){kept++}
+    });
+    document.getElementById("gallery-count").textContent=kept+" of "+contacts.length+" images";
+    document.getElementById("gallery-empty").hidden=kept>0;
+  }
+  if(gallerySearch){
+    gallerySearch.addEventListener("input",filterGallery);
+    galleryFilter.addEventListener("change",filterGallery);
+    document.getElementById("gallery-reset").addEventListener("click",function(){
+      members=null;gallerySearch.value="";galleryFilter.value="all";groupNote.hidden=true;filterGallery();
+    });
+    all("[data-members]").forEach(function(link){link.addEventListener("click",function(event){
+      event.preventDefault();members=link.getAttribute("data-members").split(",");
+      gallerySearch.value="";galleryFilter.value="all";groupNote.textContent=link.getAttribute("data-group-label");
+      groupNote.hidden=false;filterGallery();openView("summary");location.hash="gallery";
+      document.getElementById("gallery").scrollIntoView({block:"start"});
+    })});
+    filterGallery();
+  }
+  var timeDay=document.getElementById("time-day"),timeRows=all("[data-time-row]");
+  function filterTime(){
+    var period=timeDay.value,kept=0;
+    timeRows.forEach(function(row){row.hidden=!!period&&!row.getAttribute("data-time-row").startsWith(period);if(!row.hidden){kept++}});
+    all("[data-time-year]").forEach(function(button){button.setAttribute("aria-pressed",String(!!period&&period.startsWith(button.getAttribute("data-time-year"))))});
+    document.getElementById("time-count").textContent=kept+" images";
+    var list=document.querySelector(".time-list");if(list){list.scrollTop=0}
+  }
+  if(timeDay){
+    timeDay.addEventListener("change",filterTime);
+    all("[data-time-year]").forEach(function(button){button.addEventListener("click",function(){timeDay.value=button.getAttribute("data-time-year");filterTime()})});
+  }
+  var places=all(".place-pane");
+  function choosePlace(key){
+    places.forEach(function(pane){pane.classList.toggle("on",pane.id===key)});
+    all("[data-place]").forEach(function(button){button.setAttribute("aria-pressed",String(button.getAttribute("data-place")===key))});
+  }
+  all("[data-place]").forEach(function(button){button.addEventListener("click",function(event){event.preventDefault();choosePlace(button.getAttribute("data-place"))})});
+  all("[data-geo-select]").forEach(function(button){button.addEventListener("click",function(event){
+    event.preventDefault();var number=button.getAttribute("data-geo-select");
+    all("[data-geo-row]").forEach(function(row){row.classList.toggle("selected",row.getAttribute("data-geo-row")===number)});
+    all("[data-geo-select]").forEach(function(mark){mark.classList.toggle("selected",mark.getAttribute("data-geo-select")===number)});
+    var row=document.getElementById("geo-row-"+number);if(row){row.scrollIntoView({block:"nearest"})}
+  })});
+  if(places.length){choosePlace(places[0].id)}
+
+  fromHash();
 
   var paper=document.getElementById("print");
   if(paper){paper.addEventListener("click",function(){window.print()})}
@@ -1138,31 +1299,19 @@ SCRIPT = r"""
 class _Assets:
     """Where a report's images go when they are not carried inside the page.
 
-    An image is already a file on disk, so the page points at it where it
-    lies. A derived map is not a file anywhere, so it is written beside the page
-    and pointed at there. The two move together as one directory.
+    The working image and every analytical output are written beside the page.
+    The evidence path remains recorded as evidence and is never used as the
+    report's mutable pixel source.
     """
 
     directory: Path
-    page: Path
+    url_directory: str
 
     def source(self, photo: PhotoResult, artifact: PhotoArtifact) -> str:
-        if artifact.key == "main-preview" and Path(photo.path).suffix.lower() in _RENDERABLE:
-            linked = _relative(Path(photo.path), self.page)
-            if linked is not None:
-                return linked
         name = f"{photo.number:03d}-{artifact.key}{_SUFFIXES.get(artifact.mime, '.bin')}"
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / name).write_bytes(artifact.data)
-        return f"{quote(self.directory.name)}/{name}"
-
-
-def _relative(target: Path, page: Path) -> str | None:
-    try:
-        walked = os.path.relpath(target, page.parent)
-    except ValueError:
-        return None
-    return quote(PurePath(walked).as_posix())
+        return f"{quote(self.url_directory)}/{name}"
 
 
 def render_photo_html(
@@ -1171,6 +1320,7 @@ def render_photo_html(
     output: Path | None = None,
     now: datetime | None = None,
     assets: Path | None = None,
+    asset_url: str | None = None,
     case: str | None = None,
     examiner: str | None = None,
 ) -> str:
@@ -1178,45 +1328,68 @@ def render_photo_html(
 
     With `assets` the images are written into that directory and pointed at, and
     the page is the small part; without it every image is carried inside the page
-    and the report is one file. `assets` needs `output`, because a relative link
-    is relative to something. `case` and `examiner` head the title block when
-    given.
+    and the report is one file. `asset_url` lets an atomic writer render into a
+    staging directory while linking the final directory name. `assets` needs
+    `output`, because a relative link is relative to something. `case` and
+    `examiner` head the title block when given.
     """
     if assets is not None and output is None:
         raise ValueError("assets needs output: a link is relative to the page holding it")
-    written = _Assets(assets, output) if assets is not None and output is not None else None
+    if asset_url is not None and assets is None:
+        raise ValueError("asset_url needs assets: there is nowhere to write linked images")
+    written = _Assets(assets, asset_url or assets.name) if assets is not None else None
     moment = (now or datetime.now().astimezone()).strftime("%Y-%m-%d %H:%M %Z").strip()
     title = " - ".join(
-        part for part in (case, output.name if output else None, "Image examination report") if part
+        part
+        for part in (
+            case,
+            output.name if output else None,
+            "Digital Image Examination Report",
+        )
+        if part
     )
-    rows = _field_rows(collection)
+    rows = _evidence_rows(collection)
     from . import photomap
 
     fixes = _fixes(collection)
     refs = _refs(collection)
     # Everything that speaks for the whole collection is one view; the
-    # images are the other. Neither is a section of the other.
+    # images are the other. Neither is a section of the other. What needs a
+    # decision comes first and the table a reader consults comes last.
     collected = (
-        _summary(collection, rows)
+        _section("summary", "Summary", "", _figures(collection, rows))
+        + _gallery(collection, written, refs)
         + _key_findings(collection, refs)
-        + _section("metadata", "Metadata", str(len(rows)), _metadata_table(rows))
-        + (_geolocation(fixes) if fixes else "")
+        + _collection_section(collection)
+        + _timeline_section(collection, written)
+        + (_geolocation(fixes, len(collection.photos)) if fixes else "")
+        + _section(
+            "evidence",
+            "Evidence records",
+            "",
+            _evidence_table(rows),
+            caution="The category states what kind of record this is, and match basis states"
+            " how it was tied to the file. Neither proves that a recorded value is true."
+            " Findings name measured conflicts separately.",
+        )
     )
     places = [
-        ("summary", "summary", "Case summary"),
+        ("summary", "summary", "Summary"),
+        ("gallery", "summary", "Images"),
         ("findings", "summary", "Findings"),
-        ("metadata", "summary", "Metadata"),
+        ("collection", "summary", "Shared attributes"),
+        ("timeline", "summary", "Dates"),
     ]
     if fixes:
-        places.append(("geolocation", "summary", "Geolocation"))
-    places.append(("", "images", "Images"))
+        places.append(("geolocation", "summary", "Locations"))
+    places += [("evidence", "summary", "Evidence")]
     head = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f'<meta http-equiv="Content-Security-Policy" content="{LINKED_POLICY if written else POLICY}">'
         '<meta name="referrer" content="no-referrer">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         '<meta name="color-scheme" content="dark">'
-        f"<title>{_e(title)}</title>{FAVICON}<style>{STYLE}</style></head><body>{ICONS}"
+        f"<title>{_e(title)}</title>{FAVICON}<style>{STYLE}{reportchrome.STYLE}</style></head><body>{ICONS}"
     )
     links = "".join(
         f'<a href="#{key}" data-goto="{view}" aria-current="false">{_e(name)}</a>'
@@ -1229,14 +1402,7 @@ def render_photo_html(
         'title="Print / PDF" aria-label="Print / PDF">'
         '<svg class="ic" aria-hidden="true"><use href="#i-print"/></svg></button></div></nav>'
     )
-    # The images take no heading of their own: the bar above them names the
-    # one being read and follows the reader down.
-    main = (
-        f'<div class="view on" data-view="summary">{collected}</div>'
-        f'<div class="view" data-view="images">'
-        f'<section class="bare" id="images">{_workspace(collection, written, refs)}</section>'
-        "</div>"
-    )
+    main = f'<div class="view on" data-view="summary">{collected}</div>'
     top = (
         '<button class="btn icon to-top" id="to-top" type="button" title="Back to top" '
         'aria-label="Back to top" hidden><svg class="ic" aria-hidden="true">'
@@ -1250,10 +1416,9 @@ def render_photo_html(
     return (
         head
         + (photomap.defs() if fixes else "")
+        + _mast(collection, rows, moment, output, written, case, examiner)
         + nav
-        + _mast(collection, moment, output, written, case, examiner)
-        + f'<div class="shell">{_rail(collection, written)}<main>{main}</main></div>'
-        + f'<section class="scope" id="scope">{_scope(collection, written)}</section>'
+        + f'<div class="shell"><main>{main}</main></div>'
         + top
         + footer
         + f"<script>{SCRIPT}</script></body></html>"
@@ -1262,121 +1427,38 @@ def render_photo_html(
 
 def _mast(
     collection: PhotoCollection,
+    rows: list[_EvidenceRow],
     moment: str,
     output: Path | None,
     written: _Assets | None,
     case: str | None,
     examiner: str | None,
 ) -> str:
-    # Which case and whose work come first: they are what a report is filed by.
-    facts = [(label, value) for label, value in (("case", case), ("examiner", examiner)) if value]
-    facts += [("target", collection.root), ("analysed", moment)]
-    if output is not None:
-        facts.append(("report", str(output)))
-    # Where the images are is the first thing to know about a page that may not
-    # carry them: one of these reports travels alone and one does not, and a
-    # reader has to be told which they are holding.
-    facts.append(
+    metadata = [("Case", case)] if case else []
+    if examiner:
+        metadata.append(("Examiner", examiner))
+    metadata.append(("Generated", moment))
+    if collection.redacted:
+        metadata.append(("Media", "Redacted"))
+    technical = [("Target", str(collection.root))]
+    if output:
+        technical.append(("Report", str(output)))
+    technical.append(
         (
-            "media",
+            "Media",
             "redacted"
             if collection.redacted
-            else ("linked beside the page" if written else "carried in the page"),
+            else "linked beside the page"
+            if written
+            else "carried in the page",
         )
     )
-    pairs = "".join(f"<dt>{_e(label)}</dt><dd>{_e(value)}</dd>" for label, value in facts)
-    return (
-        '<header class="mast" id="top">'
-        f'<h1 class="word">filegrail <small>v{_e(__version__)} / image examination</small></h1>'
-        f'<div class="mast-body"><div class="mast-mark">{MARK}</div>'
-        f'<dl class="facts">{pairs}</dl></div></header>'
+    return reportchrome.header(
+        "Image examination",
+        str(collection.root),
+        metadata,
+        technical,
     )
-
-
-def _rail(collection: PhotoCollection, written: _Assets | None) -> str:
-    """The two things that stay on screen: the evidence, and the analyses.
-
-    A report that only scrolls asks the reader to hold the shape of it in their
-    head. A rail holds it instead: what was examined, what this tool can bring
-    to bear on an image, and which of each the reader is looking at.
-    """
-    roll = []
-    for photo in collection.photos:
-        broken = sum(1 for fact in photo.facts if fact.state == "conflict")
-        artifact = _first_artifact(photo, *_PHOTOGRAPHIC)
-        thumb = (
-            f'<span class="th">{_image(artifact, photo.name, photo, written)}</span>'
-            if artifact
-            else f'<span class="th none">{_e(photo.format)}</span>'
-        )
-        signals = sum(1 for fact in photo.facts if fact.state == "signal")
-        stamps = ""
-        if broken:
-            stamps += (
-                f'<span class="tag conflict">{broken} conflict{"s" if broken > 1 else ""}</span>'
-            )
-        if signals:
-            stamps += (
-                f'<span class="tag signal">{signals} signal{"s" if signals > 1 else ""}</span>'
-            )
-        if _first_artifact(photo, "embedded-preview", "maker-preview"):
-            stamps += '<span class="tag preview">preview</span>'
-        if not artifact:
-            stamps += '<span class="tag nodecode">no decode</span>'
-        roll.append(
-            f'<li><a href="#photo-{photo.number:03d}">'
-            f'<span class="no">{photo.number:03d}</span>{thumb}'
-            f'<span class="nm" title="{_e(photo.name)}">{_e(photo.name)}</span>'
-            f'<span class="sub">{_e(photo.camera or "camera not recorded")}</span>'
-            f'<span class="st">{stamps}</span></a></li>'
-        )
-    listed = (
-        f'<ol class="roll">{"".join(roll)}</ol>'
-        if roll
-        else '<p class="empty" style="padding:0 15px 10px">nothing to examine</p>'
-    )
-    evidence = (
-        f'<div class="rail-block"><h2>Images <span class="n">{len(collection.photos)}</span></h2>'
-        f"{listed}</div>"
-    )
-    # An analysis that produced nothing anywhere in this report is still named
-    # and set back rather than dropped. A reader has to be able to tell a method
-    # that found nothing from a method that was never brought, and the rail is
-    # the only place that can say which.
-    anywhere = _available(collection)
-    branches = []
-    for category, leaves in _TREE:
-        entries = []
-        for key, label in leaves:
-            if key not in anywhere:
-                entries.append(
-                    '<li><span class="leaf" title="not produced for any image here">'
-                    f'<i class="dot"></i>{_e(label)}</span></li>'
-                )
-                continue
-            entries.append(
-                f'<li><a href="#images" data-tool="{_e(key)}" data-state="has">'
-                f'<i class="dot"></i>{_e(label)}</a></li>'
-            )
-        branches.append(
-            f'<li><span class="cat">{_e(category)}</span><ul>{"".join(entries)}</ul></li>'
-        )
-    tools = (
-        f'<div class="rail-block"><h2>Analyses</h2><ul class="tree">{"".join(branches)}</ul></div>'
-    )
-    return f'<aside class="rail" aria-label="Images and analyses">{evidence}{tools}</aside>'
-
-
-def _available(collection: PhotoCollection) -> set[str]:
-    """Every analysis that produced something for at least one image."""
-    found = {"image", "fileinfo", "findings", "coverage"}
-    for photo in collection.photos:
-        found.update(artifact.key for artifact in photo.artifacts)
-        if photo.evidence:
-            found.add("fields")
-        if photo.jpeg is not None:
-            found.update(("structure", "markers"))
-    return found
 
 
 def _held(photo: PhotoResult) -> list[str]:
@@ -1390,16 +1472,27 @@ def _held(photo: PhotoResult) -> list[str]:
     return keys
 
 
-def _section(key: str, title: str, note: str, body: str) -> str:
+def _section(key: str, title: str, note: str, body: str, *, caution: str = "") -> str:
     counted = f'<span class="n">{_e(note)}</span>' if note else ""
+    ask = _why(caution)
     fold = (
         f'<button class="fold" type="button" aria-expanded="true" aria-controls="{key}-body" '
         f'title="Collapse section" aria-label="Collapse {_e(title)}">'
         '<svg class="ic" aria-hidden="true"><use href="#i-chevron"/></svg></button>'
     )
     return (
-        f'<section id="{key}"><div class="h">{fold}<h2>{_e(title)}</h2>{counted}</div>'
+        f'<section id="{key}"><div class="h">{fold}<h2>{_e(title)}</h2>{ask}{counted}</div>'
         f'<div class="sec-body" id="{key}-body">{body}</div></section>'
+    )
+
+
+def _why(caution: str) -> str:
+    """A limitation behind a mark, beside the title it qualifies."""
+    if not caution:
+        return ""
+    return (
+        '<button class="why" type="button" aria-label="Limitations">i</button>'
+        f'<div class="caution"><b>Limitations</b>{_e(caution)}</div>'
     )
 
 
@@ -1409,7 +1502,7 @@ def _card(
     family: str,
     body: str,
     *,
-    reading: str = "",
+    reading: str | None = None,
     caution: str = "",
     foot: str = "",
     controls: str = "",
@@ -1417,43 +1510,66 @@ def _card(
     sunk: bool = False,
     extra: str = "",
     element_id: str = "",
+    show_caution: bool = False,
 ) -> str:
     """One analysis panel, with the anatomy every other panel also has.
 
     A bar that names it, a reading that says what it shows, a body, a caution
     that states the limitations, and a foot carrying the parameters. The
-    reading and the caution are markup rather than something a script reveals,
-    so they survive printing and a reader who never clicks anything.
+    caution is markup rather than something a script reveals, so it survives
+    printing and a reader who never clicks anything; on screen it stands behind
+    a mark in the bar, and under an analytical output it stays in view, where it
+    says how to read the picture.
     """
     guide = _GUIDE.get(key)
-    if not reading and guide:
-        reading = guide.shows
+    if reading is None:
+        reading = guide.shows if guide else ""
     if not caution and guide:
         caution = guide.caution
-    ask = ""
+    ask = _why(caution) if not show_caution else ""
     classes = "panel" + (f" {extra}" if extra else "")
     identifier = f' id="{_e(element_id)}"' if element_id else ""
     shape = "body" + (" flush" if flush else "") + (" sunk" if sunk else "")
     return (
         f'<section class="{classes}"{identifier}>'
-        f'<div class="bar"><span class="t">{_e(title)}</span>'
-        f'<span class="fam">{_e(family)}</span><span class="sp"></span>{controls}{ask}</div>'
+        f'<div class="bar"><span class="t">{_e(title)}</span>{ask}'
+        f'<span class="fam">{_e(family)}</span><span class="sp"></span>{controls}</div>'
         + (f'<div class="reading">{_e(reading)}</div>' if reading else "")
         + f'<div class="{shape}">{body}</div>'
-        + (f'<div class="caution"><b>Limitations</b>{_e(caution)}</div>' if caution else "")
+        + (
+            f'<div class="caution shown"><b>Limitations</b>{_e(caution)}</div>'
+            if caution and show_caution
+            else ""
+        )
         + (f'<div class="foot">{foot}</div>' if foot else "")
         + "</section>"
     )
 
 
-def _summary(collection: PhotoCollection, rows: list[tuple[str, str, str, str, str]]) -> str:
-    """What the collection is, before any one image."""
-    panels = _clusters(collection) + _times(collection)
-    return (
-        '<section class="section" id="summary"><div class="section-h"><h2>Case summary</h2>'
-        '<span class="small">what the collection is, before any one image</span></div>'
-        f"{_stats(collection, rows)}"
-        f'<div class="summary-grid">{panels}</div></section>'
+def _timeline_section(collection: PhotoCollection, written: _Assets | None = None) -> str:
+    """When the images say they were taken, before anything else: the whole in one line."""
+    stamped = sum(1 for photo in collection.photos if _moment(photo) is not None)
+    total = len(collection.photos)
+    note = f"{stamped} of {total} image{'' if total == 1 else 's'} carry a time"
+    return _section("timeline", "Recorded dates", note, _times(collection, written))
+
+
+def _collection_section(collection: PhotoCollection) -> str:
+    """What the images share, grouped four ways."""
+    makes = len({make for photo in collection.photos if (make := _first_field(photo, "Make"))})
+    formats: dict[str, int] = {}
+    for photo in collection.photos:
+        formats[photo.format] = formats.get(photo.format, 0) + 1
+    kinds = " \u00b7 ".join(
+        f"{name} {count}" for name, count in sorted(formats.items(), key=lambda item: -item[1])
+    )
+    note = f"{len(collection.photos)} files \u00b7 {kinds} \u00b7 {makes} make{'' if makes == 1 else 's'}"
+    return _section(
+        "collection",
+        "Shared attributes",
+        note,
+        _clusters(collection),
+        caution="Repeated metadata values and encoding characteristics do not establish a common device, author or event.",
     )
 
 
@@ -1463,7 +1579,7 @@ def _key_findings(collection: PhotoCollection, refs: dict[tuple[int, int], str])
     rows = "".join(
         f"<tr{_flag(fact.state)}>"
         f'<td class="m"><a href="#photo-{number:03d}-{ref}">{ref}</a></td>'
-        f'<td><span class="m">#{number:03d}</span> {_e(photo.name)}</td>'
+        f'<td class="file"><a href="#photo-{number:03d}"><span class="m">#{number:03d}</span> {_e(photo.name)}</a></td>'
         f'<td class="k">{_e(fact.state)}</td>'
         f"<td><b>{_e(fact.label)}</b> {_e(fact.value)}</td>"
         f'<td class="m">{_e(fact.method)}</td></tr>'
@@ -1472,82 +1588,100 @@ def _key_findings(collection: PhotoCollection, refs: dict[tuple[int, int], str])
         for fact in (photo.facts[index],)
     )
     table = (
-        '<div class="body flush"><div class="scroll"><table><thead><tr>'
-        '<th style="width:56px">#</th><th style="width:240px">image</th>'
-        '<th style="width:84px">state</th><th>finding</th><th style="width:200px">method</th>'
-        f"</tr></thead><tbody>{rows}</tbody></table></div></div>"
+        '<div class="scroll"><table><thead><tr>'
+        '<th style="width:56px">#</th><th style="width:300px">image</th>'
+        '<th style="width:84px">state</th><th>finding</th><th style="width:190px">method</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table></div>"
         if rows
-        else '<div class="body"><p class="small">No conflicts or signals were found in these'
-        " images.</p></div>"
+        else '<p class="small">No conflicts or signals were found in these images.</p>'
     )
     return _section(
         "findings",
         "Key findings",
         str(len(refs)),
-        f'<div class="panel"><div class="reading">{_e(_NOTES["findings"])}</div>{table}'
-        f'<div class="caution"><b>Limitations</b>{_e(_CAUTIONS["findings"])}</div></div>',
+        _card(
+            "findings-all",
+            "Numbered findings",
+            "disagreements the tool can support and material flagged for a reader;"
+            " each row leads to its image",
+            table,
+            reading="",
+            caution=_CAUTIONS["findings"],
+            flush=bool(rows),
+        ),
     )
 
 
-def _stats(collection: PhotoCollection, rows: list[tuple[str, str, str, str, str]]) -> str:
+def _figures(collection: PhotoCollection, rows: list[_EvidenceRow]) -> str:
+    """The collection in six figures, each a link to the place where it is counted."""
     counted = len(collection.photos)
-    formats: dict[str, int] = {}
-    for photo in collection.photos:
-        formats[photo.format] = formats.get(photo.format, 0) + 1
-    embedded = sum(
-        1
-        for photo in collection.photos
-        if _first_artifact(photo, "embedded-preview", "maker-preview")
-    )
+    working = [p.number for p in collection.photos if _first_artifact(p, "main-preview")]
+    missing = [p.number for p in collection.photos if p.number not in working]
     conflicts = sum(
         1 for photo in collection.photos for fact in photo.facts if fact.state == "conflict"
     )
     signals = sum(
         1 for photo in collection.photos for fact in photo.facts if fact.state == "signal"
     )
-    blocks: dict[str, None] = {}
-    for _where, _name, block, _value, _state in rows:
-        blocks[block] = None
-    undecoded = counted - collection.rendered
-    cards = (
+    figures = (
+        (str(counted), "image" if counted == 1 else "images", "images", "images", ""),
         (
-            str(counted),
+            str(len(working)),
+            "working images",
             "images",
-            " · ".join(
-                f"{name} {count}"
-                for name, count in sorted(formats.items(), key=lambda item: -item[1])
-            ),
+            "images",
+            "",
         ),
         (
-            str(collection.rendered),
-            "decoded to a preview",
-            f"{undecoded} described without one" if undecoded else "every one of them",
+            str(len(missing)),
+            "without working image",
+            "images",
+            "images",
+            "activity" if missing else "",
         ),
-        (str(embedded), "embedded previews", "written by the camera"),
-        (str(conflicts), "conflicts", "two recorded things disagree", "alert"),
-        (str(signals), "signal" if signals == 1 else "signals", "flagged for a reader"),
         (
-            f"{len(rows):,}".replace(",", " "),
-            "recorded fields",
-            " · ".join(list(blocks)[:6]) or "none",
+            str(conflicts),
+            "conflict" if conflicts == 1 else "conflicts",
+            "findings",
+            "summary",
+            "alert" if conflicts else "",
         ),
+        (
+            str(signals),
+            "signal" if signals == 1 else "signals",
+            "findings",
+            "summary",
+            "activity" if signals else "",
+        ),
+        (f"{len(rows):,}".replace(",", " "), "recorded values", "evidence", "summary", ""),
     )
-    return (
-        '<div class="stats">'
-        + "".join(
-            '<div class="stat"><div class="n">'
-            + (f"<em>{_e(value)}</em>" if len(card) > 3 and value != "0" else _e(value))
-            + f'</div><span class="label">{_e(label)}</span>'
-            f'<div class="sub">{_e(sub)}</div></div>'
-            for card in cards
-            for value, label, sub in (card[:3],)
+    selections = [[p.number for p in collection.photos], working, missing, [], [], []]
+    descriptions = (
+        "files in this examination",
+        "bounded copies available to inspect",
+        "pixels redacted"
+        if collection.redacted
+        else "a preview or metadata may still be available",
+        "measured disagreements · see findings",
+        "observations requiring interpretation",
+        "source, category and match basis",
+    )
+    items = ""
+    for index, (value, label, target, view, tone) in enumerate(figures):
+        if index < 3:
+            link = f'href="#gallery" data-members="{",".join(map(str, selections[index]))}" data-group-label="{_e(label)}"'
+        else:
+            link = f'href="#{target}" data-goto="{view}"'
+        items += (
+            f'<a class="card {tone}" {link}><span class="v">{_e(value)}</span>'
+            f'<span class="k">{_e(label)}</span><span class="s">{descriptions[index]}</span></a>'
         )
-        + "</div>"
-    )
+
+    return f'<div class="cards">{items}</div>'
 
 
 def _clusters(collection: PhotoCollection) -> str:
-    """Which images share a source, on the four axes a file can be grouped by."""
+    """Group images by shared recorded attributes, without source attribution."""
     axes = (
         ("make", "camera make", lambda photo: _first_field(photo, "Make")),
         ("serial", "body serial", lambda photo: photo.serial),
@@ -1556,7 +1690,7 @@ def _clusters(collection: PhotoCollection) -> str:
             "lens",
             lambda photo: _first_field(photo, "LensModel", "LensInfo", "LensSerialNumber"),
         ),
-        ("encoder", "encoder signature", lambda photo: _signature(photo)),
+        ("encoder", "JPEG encoding fingerprint", lambda photo: _signature(photo)),
     )
     panes = []
     buttons = []
@@ -1570,7 +1704,13 @@ def _clusters(collection: PhotoCollection) -> str:
         largest = max((count for _name, count in ordered), default=1)
         bars = "".join(
             f'<div class="brow{" none" if name == "not recorded" else ""}">'
-            f'<span class="k" title="{_e(name)}">{_e(name)}</span>'
+            f'<span class="k" title="{_e(name)}">'
+            + (
+                _e(name)
+                if name == "not recorded"
+                else f'<a href="#gallery" data-members="{",".join(str(photo.number) for photo in collection.photos if pick(photo) == name)}" data-group-label="{_e(label)}: {_e(name)}">{_e(name)}</a>'
+            )
+            + "</span>"
             f'<span class="b"><i style="width:{count / largest * 100:.0f}%"></i></span>'
             f'<span class="n">{count}</span></div>'
             for name, count in ordered
@@ -1582,26 +1722,27 @@ def _clusters(collection: PhotoCollection) -> str:
         )
         buttons.append(
             f'<button class="btn" type="button" data-show="clusters" data-key="{key}"'
-            f' aria-pressed="false">{_e(label.split()[-1] if key != "encoder" else "encoder")}</button>'
+            f' aria-pressed="false">{_e(label.split()[-1] if key != "encoder" else "fingerprint")}</button>'
         )
     groups = len({_first_field(photo, "Make") or "" for photo in collection.photos})
     return _card(
         "clusters",
-        "Common source",
-        "four axes",
+        "Shared attributes",
+        "grouped by claimed make, body serial, lens and JPEG encoding fingerprint;"
+        " select a group to see its images",
         "".join(panes),
+        reading="",
         controls=f'<span class="seg needs-js" data-switch="clusters">{"".join(buttons)}</span>',
         foot=f"<span>{len(collection.photos)} files</span><span>{groups} makes</span>",
     )
 
 
 def _signature(photo: PhotoResult) -> str | None:
-    """A short name for the encoder, made of what only an encoder decides.
+    """A compact JPEG encoding fingerprint for collection grouping.
 
-    The quantization tables and the order of the markers around them are chosen
-    by whatever last wrote the file, not by the scene, so two files that share
-    them were written by the same software at the same setting. It is a name for
-    a group, and the panel that shows it says so.
+    It hashes quantization tables and marker order. Equal values show that those
+    observed encoding attributes agree; they do not identify software, a device
+    or a common source, and distinct encoders can legitimately collide.
     """
     jpeg = photo.jpeg
     if jpeg is None or not jpeg.quantization:
@@ -1615,173 +1756,269 @@ def _signature(photo: PhotoResult) -> str | None:
     return digest[:8]
 
 
-def _times(collection: PhotoCollection) -> str:
-    """Every recorded capture time on one axis, and the files that record none."""
-    stamped: list[tuple[PhotoResult, float]] = []
-    silent = 0
-    for photo in collection.photos:
-        moment = _moment(photo)
-        if moment is None:
-            silent += 1
-            continue
-        stamped.append((photo, moment))
+def _time_value(photo: PhotoResult) -> tuple[str, str]:
+    """Keep the selected timestamp's meaning and source with its value."""
+    for field in ("DateTimeOriginal", "CreateDate", "DateTimeDigitized"):
+        for record in photo.evidence:
+            if record.fields.get(field):
+                return str(record.fields[field]), f"{_source_label(record)} / {field}"
+    for record in photo.evidence:
+        if record.at:
+            return record.at, f"{_source_label(record)} / recorded time"
+    return "", ""
+
+
+def _parsed_time(photo: PhotoResult) -> datetime | None:
+    value, _ = _time_value(photo)
+    if re.match(r"^\d{4}:\d{2}:\d{2}", value):
+        value = value.replace(":", "-", 2)
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if 1826 <= moment.year <= 2200 else None
+
+
+def _times(collection: PhotoCollection, written: _Assets | None = None) -> str:
+    stamped = [
+        (photo, moment)
+        for photo in collection.photos
+        if (moment := _parsed_time(photo)) is not None
+    ]
     if not stamped:
-        body = '<p class="small">No image here records a capture time.</p>'
-        return _card("times", "Capture times", "as recorded", body)
-    first = min(value for _photo, value in stamped)
-    last = max(value for _photo, value in stamped)
-    low, high = int(first), int(last) + 1
-    if high - low < 2:
-        low, high = low - 1, high + 1
-    step = max(1, round((high - low) / 8))
-    ticks = "".join(
-        f'<line x1="{_across(year, low, high):.1f}" y1="49" x2="{_across(year, low, high):.1f}"'
-        ' y2="55" stroke="#45464A"/>'
-        f'<text x="{_across(year, low, high):.1f}" y="70" fill="#7B828B" font-size="9"'
-        ' font-family="IBM Plex Mono,monospace" text-anchor="middle">'
-        f"{year}</text>"
-        for year in range(low, high + 1, step)
+        return _card(
+            "times",
+            "Recorded dates",
+            "",
+            '<p class="small">No usable recorded dates.</p>',
+            reading="",
+        )
+    # Sort by displayed wall clock, never assign an invented zone to camera times.
+    stamped.sort(key=lambda item: item[1].replace(tzinfo=None))
+    days = sorted({moment.date().isoformat() for _, moment in stamped})
+    years = sorted({day[:4] for day in days})
+    year_counts = {year: sum(moment.year == int(year) for _, moment in stamped) for year in years}
+    options = (
+        '<optgroup label="Years">'
+        + "".join(
+            f'<option value="{year}">{year} ({year_counts[year]} images)</option>' for year in years
+        )
+        + '</optgroup><optgroup label="Dates">'
+        + "".join(f'<option value="{day}">{day}</option>' for day in days)
+        + "</optgroup>"
     )
-    marks = "".join(
-        f'<rect x="{_across(value, low, high) - 1:.1f}" y="34" width="2" height="18"'
-        f' fill="{"#D08770" if any(fact.state == "conflict" for fact in photo.facts) else "#C9A66B"}">'
-        f"<title>#{photo.number:03d} {_e(photo.name)} · {_e(_captured(photo) or '')}</title></rect>"
-        for photo, value in stamped
+    rows = []
+    for photo, moment in stamped:
+        value, source = _time_value(photo)
+        day = moment.date().isoformat()
+        number = f"{photo.number:03d}"
+        clock = moment.strftime("%H:%M:%S") if len(value.strip()) > 10 else "time not recorded"
+        zone = moment.strftime("UTC%z") if moment.tzinfo else "zone not recorded"
+        artifact = _first_artifact(photo, *_PHOTOGRAPHIC)
+        thumbnail = _image(artifact, "", photo, written) if artifact else ""
+        rows.append(
+            f'<tr id="time-{number}" data-time-row="{day}">'
+            f"<td><time>{day}<br><b>{clock}</b></time><small>{zone}</small></td>"
+            f'<td><a class="time-image" href="#photo-{number}">{thumbnail}<span>#{number} {_e(photo.name)}</span></a></td>'
+            f'<td>{_e(source)}</td><td><a href="#evidence" data-filter="#{number}">Evidence</a></td></tr>'
+        )
+    controls = (
+        '<label class="time-pick">Period <select id="time-day"><option value="">All recorded dates</option>'
+        f'{options}</select></label><span id="time-count" class="small">{len(rows)} images</span>'
     )
-    quiet = (
-        f'<rect x="10" y="82" width="{380 * silent / len(collection.photos):.1f}" height="6" fill="#262628">'
-        f"<title>{silent} with no recorded capture time</title></rect>"
-        f'<text x="10" y="78" fill="#7B828B" font-size="9.5" font-family="IBM Plex Mono,monospace">'
-        f"{silent} record no capture time</text>"
-        if silent
-        else ""
+    drawing = (
+        '<div class="time-years" aria-label="Images by recorded year">'
+        + "".join(
+            f'<button type="button" class="time-year" data-time-year="{year}" aria-pressed="false">'
+            f"<span>{year}</span><b>{year_counts[year]} <small>{'image' if year_counts[year] == 1 else 'images'}</small></b>"
+            f'<meter min="0" max="{max(year_counts.values())}" value="{year_counts[year]}" aria-label="{year_counts[year]} images in {year}"></meter></button>'
+            for year in years
+        )
+        + "</div>"
     )
-    body = (
-        '<svg viewBox="0 0 400 96" width="100%" height="96" role="img"'
-        ' aria-label="Recorded capture times on one axis">'
-        '<line x1="10" y1="52" x2="390" y2="52" stroke="#353537"/>'
-        f"{ticks}{marks}{quiet}</svg>"
+    table = (
+        '<div class="scroll time-list"><table><thead><tr><th>Recorded date / time</th>'
+        "<th>Image</th><th>Source / field</th><th>Reference</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
     )
     return _card(
         "times",
-        "Capture times",
-        "as recorded",
-        body,
-        foot=f"<span>axis {low} to {high}</span><span class='sp'></span>"
-        f"<span>{len(stamped)} of {len(collection.photos)} carry one</span>",
+        "Recorded dates",
+        "Images by recorded year; select a year or date to read the files in order",
+        drawing + '<div class="time-controls">' + controls + "</div>" + table,
+        reading="",
+        flush=True,
+        foot="<span>Ordered by displayed clock. Times without an offset are not comparable across time zones.</span>",
+        caution="A recorded date is a claim in the file, not independent proof of capture. The selected source and field are shown for every image. Other recorded dates remain in Evidence.",
     )
 
 
-def _across(value: float, low: int, high: int) -> float:
-    return 10 + (value - low) / max(high - low, 1) * 380
+def _gallery(
+    collection: PhotoCollection, written: _Assets | None, refs: dict[tuple[int, int], str]
+) -> str:
+    cards = []
+    for photo in collection.photos:
+        artifact = _first_artifact(photo, *_PHOTOGRAPHIC)
+        picture = (
+            _image(artifact, photo.name, photo, written)
+            if artifact
+            else f"<span>{_e(photo.format)}<small>{'pixels redacted' if collection.redacted else 'no preview available'}</small></span>"
+        )
+        flags = {fact.state for fact in photo.facts}
+        state = "conflict" if "conflict" in flags else "signal" if "signal" in flags else ""
+        cards.append(
+            f'<article class="contact" data-member="{photo.number}" data-decoded="{str(bool(_first_artifact(photo, "main-preview"))).lower()}"'
+            f' data-geo="{str(bool(_located(photo))).lower()}" data-flag="{state}">'
+            f'<a href="#photo-{photo.number:03d}" aria-expanded="false" aria-controls="image-inspector"><div class="contact-image">{picture}</div>'
+            f'<div class="contact-caption"><span class="m">#{photo.number:03d}</span>'
+            f"<b>{_e(photo.name)}</b><small>{_e(photo.camera or photo.format)}</small>"
+            + (f'<span class="tag {state}">{state}</span>' if state else "")
+            + (
+                "<small>Embedded preview only</small>"
+                if artifact and not _first_artifact(photo, "main-preview")
+                else ""
+            )
+            + (
+                "<small>Some analyses not evaluated</small>"
+                if any(method.status == "not evaluated" for method in photo.methods)
+                else ""
+            )
+            + "</div></a></article>"
+        )
+    controls = (
+        '<div class="gallery-controls needs-js"><label>Find an image '
+        '<input type="search" id="gallery-search" placeholder="Name or camera"></label>'
+        '<label>Show <select id="gallery-filter"><option value="all">All images</option>'
+        '<option value="flagged">Conflicts and signals</option><option value="geo">With coordinates</option>'
+        '<option value="decoded">Working image available</option><option value="undecoded">No working image</option></select></label>'
+        '<button class="btn" id="gallery-reset" type="button">Reset</button>'
+        '<span id="gallery-count" class="small"></span>'
+        '<div class="gallery-layout" role="group" aria-label="Image layout">'
+        '<button class="btn" type="button" data-gallery-layout="grid" aria-pressed="true">Grid</button>'
+        '<button class="btn" type="button" data-gallery-layout="list" aria-pressed="false">List</button></div></div>'
+        '<p id="gallery-group" class="small" hidden></p>'
+    )
+    return _section(
+        "gallery",
+        "Images",
+        f"{len(cards)} in the collection",
+        controls
+        + '<div class="contacts">'
+        + "".join(cards)
+        + '<div class="inline-inspector" id="image-inspector" role="region" aria-label="Selected image examination">'
+        + _workspace(collection, written, refs)
+        + "</div></div>"
+        '<p id="gallery-empty" hidden>No images match this selection.</p>',
+    )
 
 
-def _spread(fixes: list[Fix]) -> tuple[float, str]:
-    """How far apart the located images are, in metres and as a phrase."""
+def _location_groups(fixes: list[Fix]) -> list[list[Fix]]:
+    """Bound each local view to 25 km from its first point; never infer a route."""
     import math
 
-    if len(fixes) < 2:
-        return 0.0, ""
-    reach = 0.0
-    for index, one in enumerate(fixes):
-        for other in fixes[index + 1 :]:
-            across = 111_320.0 * math.cos(math.radians((one.latitude + other.latitude) / 2))
-            metres = math.hypot(
-                (one.longitude - other.longitude) * across,
-                (one.latitude - other.latitude) * 111_320.0,
+    groups: list[list[Fix]] = []
+    for fix in fixes:
+        for group in groups:
+            seed = group[0]
+            lat1, lat2 = math.radians(seed.latitude), math.radians(fix.latitude)
+            dlat = lat2 - lat1
+            dlon = math.radians(fix.longitude - seed.longitude)
+            hav = (
+                math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
             )
-            reach = max(reach, metres)
-    if reach >= 100_000:
-        return reach, f"{reach / 1000:.0f} km"
-    if reach >= 1000:
-        return reach, f"{reach / 1000:.1f} km"
-    return reach, f"{reach:.0f} m"
+            distance = 12_742_000 * math.asin(min(1, math.sqrt(hav)))
+            if distance <= 25_000:
+                group.append(fix)
+                break
+        else:
+            groups.append([fix])
+    return sorted(groups, key=lambda group: -len(group))
 
 
-def _geolocation(fixes: list[Fix]) -> str:
-    """Three scales, none of them a map tile."""
+def _geolocation(fixes: list[Fix], total: int) -> str:
     from . import photomap
 
-    dots = tuple((*photomap.project(fix.latitude, fix.longitude), 12.0) for fix in fixes)
-    near = tuple((*photomap.project(fix.latitude, fix.longitude), 6.0) for fix in fixes)
-    view = photomap.window(fixes)
-    left, top, wide, high = (float(part) for part in view.split())
-    frame = (
-        f'<rect x="{left:.1f}" y="{top:.1f}" width="{wide:.1f}" height="{high:.1f}" fill="none"'
-        ' stroke="#7FB5A8" stroke-width=".8" stroke-dasharray="3 2"'
-        ' vector-effect="non-scaling-stroke"/>'
-    )
-    drawing, centre, per_pixel = photomap.site(fixes)
-    # A plot in metres is the right scale for one place and the wrong one for
-    # three continents, so whichever scale says something opens the panel.
-    reach, _said = _spread(fixes)
-    scales = (("site", "site"), ("region", "region"), ("world", "world"))
-    if reach > 50_000:
-        scales = (("world", "world"), ("region", "region"), ("site", "site"))
-    panes = (
-        '<div data-pane="scales" data-key="site">'
-        '<span class="label pane-name">site</span>'
-        f'<div class="site-body">{drawing}</div>'
-        f'<span class="cap">local metres from {_e(centre)} \u00b7 1 px = {per_pixel:.2f} m'
-        " \u00b7 no basemap under it</span></div>"
-        f'<div data-pane="scales" data-key="world" class="world-body">'
-        f'<span class="label pane-name">world</span>'
-        f"{photomap.outline('0 0 1000 500', dots=dots, extra=frame)}</div>"
-        f'<div data-pane="scales" data-key="region" class="region-body">'
-        f'<span class="label pane-name">region</span>{photomap.outline(view, dots=near)}</div>'
-    )
-    controls = (
-        '<span class="seg needs-js" data-switch="scales">'
-        + "".join(
-            f'<button class="btn" type="button" data-show="scales" data-key="{key}"'
-            f' aria-pressed="false">{_e(label)}</button>'
-            for key, label in scales
+    groups = _location_groups(fixes)
+    buttons, panes, marks = [], [], []
+    for index, group in enumerate(groups):
+        key = f"place-{index + 1}"
+        seed = group[0]
+        area = f"{abs(seed.latitude):.3f}°{'N' if seed.latitude >= 0 else 'S'}, {abs(seed.longitude):.3f}°{'E' if seed.longitude >= 0 else 'W'}"
+        count_label = f"{len(group)} image" + ("s" if len(group) != 1 else "")
+        x, y = photomap.project(seed.latitude, seed.longitude)
+        marks.append(
+            f'<a href="#{key}" data-place="{key}"><circle cx="{x:.2f}" cy="{y:.2f}" r="13" fill="var(--brand)"/>'
+            f'<text x="{x:.2f}" y="{y + 4:.2f}" text-anchor="middle" fill="#101714" font-size="12">{len(group)}</text>'
+            f"<title>Near {area}: {count_label}</title></a>"
         )
-        + "</span>"
-    )
-    site_panel = _card(
-        "geolocation",
-        scales[0][1].title(),
-        f"{len(fixes)} point{'' if len(fixes) == 1 else 's'} · capture order dashed",
-        panes,
-        controls=controls,
-        sunk=True,
-        foot=f"<span>{len(fixes)} of the images carry coordinates</span>"
-        "<span class='sp'></span><span>outline: Natural Earth 1:110m, public domain</span>",
+        buttons.append(
+            f'<button class="btn" type="button" data-place="{key}" aria-pressed="false">'
+            f"{area} <b>{count_label}</b></button>"
+        )
+        drawing, centre, _ = photomap.site(group)
+        # Local points select the corresponding row; opening the image is a separate action.
+        for fix in group:
+            drawing = drawing.replace(
+                f'href="#photo-{fix.number:03d}"',
+                f'href="#geo-row-{fix.number:03d}" data-geo-select="{fix.number:03d}"',
+            )
+        rows = "".join(
+            f'<li id="geo-row-{fix.number:03d}" data-geo-row="{fix.number:03d}">'
+            f'<button type="button" data-geo-select="{fix.number:03d}" class="place-select">'
+            f'<span class="m">#{fix.number:03d}</span><b>{_e(fix.name)}</b>'
+            f"<small>{fix.latitude:.6f}, {fix.longitude:.6f}</small></button>"
+            f'<a href="#photo-{fix.number:03d}">Examine image →</a>'
+            f'<a href="#evidence" data-filter="#{fix.number:03d}">Evidence</a></li>'
+            for fix in group
+        )
+        panes.append(
+            f'<div class="place-pane" id="{key}"><div class="place-plot">{drawing}'
+            f'<p class="small">{_e(centre)}</p></div><ol class="place-list">{rows}</ol></div>'
+        )
+    world = photomap.outline(photomap.window(fixes), extra="".join(marks))
+    navigation = (
+        '<div class="place-overview"><div class="place-world">' + world + "</div>"
+        '<div><p class="place-title">Recorded locations</p>'
+        f"<p>{len(fixes)} images with coordinates · {total - len(fixes)} without usable coordinates</p>"
+        '<p class="small">Each view contains points within 25 km of its listed coordinate. This is a map viewing aid, not evidence of a shared event. Select an area, then an image.</p>'
+        '<div class="place-buttons">' + "".join(buttons) + "</div></div></div>"
     )
     rows = "".join(
-        f'<tr><td class="m">{fix.number:03d}</td>'
-        f'<td class="v">{abs(fix.latitude):.6f} {"N" if fix.latitude >= 0 else "S"}'
-        f" \u00b7 {_e(_dms(fix.latitude, 'lat').rsplit(' ', 1)[0])}</td>"
-        f'<td class="v">{abs(fix.longitude):.6f} {"E" if fix.longitude >= 0 else "W"}'
-        f" \u00b7 {_e(_dms(fix.longitude, 'lon').rsplit(' ', 1)[0])}</td>"
-        f'<td class="v{"" if fix.altitude else " dim"}">{_e(fix.altitude or "not recorded")}</td>'
-        f'<td class="v{"" if fix.gps_time else " dim"}">{_e(fix.gps_time or "not recorded")}</td>'
-        f'<td class="v{"" if fix.at else " dim"}">{_e(fix.at or "not recorded")}</td></tr>'
+        f'<tr><td class="m"><a href="#photo-{fix.number:03d}">#{fix.number:03d}</a></td>'
+        f"<td>{abs(fix.latitude):.6f} {'N' if fix.latitude >= 0 else 'S'}<small>{_dms(fix.latitude, 'lat')}</small></td>"
+        f"<td>{abs(fix.longitude):.6f} {'E' if fix.longitude >= 0 else 'W'}<small>{_dms(fix.longitude, 'lon')}</small></td>"
+        f"<td>{_e(fix.altitude or 'not recorded')}</td><td>{_e(fix.gps_time or 'not recorded')}</td>"
+        f"<td>{_e(fix.at or 'not recorded')}</td></tr>"
         for fix in fixes
     )
-    table = _card(
-        "coordinates",
-        "Recorded coordinates",
-        "decimal and sexagesimal",
-        '<div class="scroll"><table id="coord-rows"><thead><tr><th>#</th><th>latitude</th>'
-        "<th>longitude</th><th>altitude</th><th>GPS time</th><th>recorded time</th></tr></thead>"
-        f"<tbody>{rows}</tbody></table></div>",
-        flush=True,
-        controls='<button class="btn needs-js" type="button" data-copy="coord-rows" hidden'
-        ' title="Copy the coordinates"><svg class="ic" aria-hidden="true">'
-        '<use href="#i-copy"/></svg><span>copy</span></button>',
-        caution="Coordinates say where the receiver believed it was when the file was written,"
-        " to the precision the camera recorded. Distances under 20 m are inside a consumer"
-        " receiver's error.",
+    table = (
+        '<div class="scroll"><table id="coord-rows"><thead><tr><th>Image</th><th>Latitude</th><th>Longitude</th><th>Altitude</th><th>GPS time</th><th>Other recorded time</th></tr></thead><tbody>'
+        + rows
+        + "</tbody></table></div>"
     )
-    return (
-        '<section class="section" id="geolocation"><div class="section-h"><h2>Geolocation</h2>'
-        f'<span class="small">{len(fixes)} image{"" if len(fixes) == 1 else "s"} carry'
-        " coordinates. Three scales, none of them a map tile: world and region from an outline"
-        " carried in the page, the site as a plot in metres.</span></div>"
-        f"{site_panel}"
-        f'<div style="margin-top:16px">{table}</div></section>'
+    return _section(
+        "geolocation",
+        "Recorded locations",
+        f"{len(fixes)} of {total} images carry coordinates",
+        _card(
+            "geolocation",
+            "Recorded locations",
+            "Nearby coordinates, shown together for readability",
+            navigation + "".join(panes),
+            reading="",
+            flush=True,
+            caution="Groups are for navigation, within 25 km of a group seed; they do not establish a shared event. Local plots have no basemap. Recorded coordinates do not prove a location or a route. The first available coordinate record is plotted; consult Evidence for all sources.",
+            foot="<span>Regional outline: Natural Earth 1:110m · public domain</span>",
+        )
+        + _card(
+            "coordinates",
+            "Recorded coordinates",
+            "Compare GPS and other recorded times",
+            table,
+            reading="",
+            flush=True,
+        ),
     )
 
 
@@ -1856,21 +2093,10 @@ def _captured(photo: PhotoResult) -> str | None:
     return next((record.at for record in photo.evidence if record.at), None)
 
 
-_MOMENT = re.compile(r"^(\d{4})[-:](\d{2})[-:](\d{2})")
-
-
 def _moment(photo: PhotoResult) -> float | None:
-    """The recorded capture time as a year with a fraction, for one axis."""
-    said = _captured(photo)
-    if not said:
-        return None
-    found = _MOMENT.match(said)
-    if not found:
-        return None
-    year, month, day = (int(part) for part in found.groups())
-    if not (1826 <= year <= 2200 and 1 <= month <= 12 and 1 <= day <= 31):
-        return None
-    return year + ((month - 1) * 31 + day - 1) / 372
+    """Display-clock position with second precision, without inventing a timezone."""
+    moment = _parsed_time(photo)
+    return moment.replace(tzinfo=timezone.utc).timestamp() if moment else None
 
 
 def _workspace(
@@ -1891,8 +2117,7 @@ def _workspace(
         '<span class="deck-id"><b id="deck-name"></b>'
         '<span class="path" id="deck-path"></span></span>'
         '<span class="stamp" id="deck-format"></span>'
-        '<button class="btn" type="button" data-cols="1" aria-pressed="false">single</button>'
-        '<button class="btn" type="button" data-cols="2" aria-pressed="true">tile</button>'
+        '<button class="btn" type="button" id="inspector-close">Close details</button>'
         "</div>"
     )
     frames = "".join(
@@ -1921,17 +2146,51 @@ def _frame(
         _fileinfo_panel(photo, frame_id),
         _findings_panel(photo, frame_id, refs),
     ]
+    # In the order the rail's tree names them: what the file is, what it says,
+    # what was done to it, how it is built, what the outputs show, and the
+    # marker stream last, where a long table splits nothing.
     if photo.evidence:
         panels.append(_blocks_panel(photo, frame_id))
+    panels.append(_coverage_panel(photo, frame_id))
     if photo.jpeg is not None:
         panels.append(_bytemap_panel(photo, photo.jpeg, frame_id))
     panels.extend(
-        _map_panel(photo, artifact, layers, written, frame_id) for artifact in _derived(layers)
+        _map_panel(photo, artifact, layers, written, frame_id)
+        for artifact in _analytical_outputs(layers)
     )
     if photo.jpeg is not None:
         panels.append(_markers_panel(photo, photo.jpeg, frame_id))
-    panels.append(_coverage_panel(photo, frame_id))
-    return head + _keyfacts(photo) + f'<div class="panels">{"".join(panels)}</div></article>'
+    tabs = (
+        '<div class="detail-tabs needs-js" aria-label="Image detail sections">'
+        + "".join(
+            f'<button class="btn" type="button" data-detail-tab="{key}" aria-pressed="{str(key == "overview").lower()}">{label}</button>'
+            for key, label in (
+                ("overview", "Overview"),
+                ("metadata", "File details"),
+                ("analysis", "Analysis"),
+                ("evidence", "Evidence"),
+            )
+        )
+        + "</div>"
+    )
+    outputs = _analytical_outputs(layers)
+    options = "".join(
+        f'<button class="btn method-choice" type="button" data-output="{_e(artifact.key)}" '
+        f'aria-pressed="false" aria-controls="{frame_id}-{_e(artifact.key)}">{_e(artifact.label)}</button>'
+        for artifact in outputs
+    )
+    selection = (
+        f'<div class="analysis-picker needs-js"><h4>Analytical outputs and previews <span>{len(outputs)}</span></h4><div class="method-choices" role="group" aria-label="Analytical outputs and previews">{options}</div></div>'
+        if outputs
+        else '<p class="analysis-picker small">No analytical output was produced. See analyses performed below.</p>'
+    )
+    return (
+        head
+        + tabs
+        + selection
+        + _keyfacts(photo)
+        + f'<div class="panels">{"".join(panels)}</div></article>'
+    )
 
 
 def _panel(
@@ -1941,7 +2200,7 @@ def _panel(
     family: str,
     body: str,
     *,
-    reading: str = "",
+    reading: str | None = None,
     caution: str = "",
     foot: str = "",
     controls: str = "",
@@ -1949,6 +2208,7 @@ def _panel(
     sunk: bool = False,
     wide: bool = False,
     extra: str = "",
+    show_caution: bool = False,
 ) -> str:
     """One analysis panel in the image view, in the shape the summary's cards use.
 
@@ -1959,6 +2219,15 @@ def _panel(
     reveals.
     """
     classes = " ".join(part for part in ("wide" if wide else "", extra) if part)
+    group = {
+        "image": "overview analysis",
+        "fileinfo": "metadata",
+        "findings": "overview evidence",
+        "fields": "evidence",
+        "coverage": "analysis evidence",
+        "structure": "metadata",
+        "markers": "metadata",
+    }.get(key, "analysis")
     return _card(
         key,
         title,
@@ -1972,7 +2241,8 @@ def _panel(
         sunk=sunk,
         extra=classes,
         element_id=f"{frame_id}-{key}",
-    )
+        show_caution=show_caution,
+    ).replace("<section ", f'<section data-detail-group="{group}" ', 1)
 
 
 def _declared_pixels(photo: PhotoResult) -> tuple[int, int] | None:
@@ -2009,7 +2279,7 @@ def _keyfacts(photo: PhotoResult) -> str:
         ),
         ("pixels", pixels),
         ("camera", f'<div class="v">{_e(photo.camera or "not recorded")}</div>'),
-        ("captured", f'<div class="v">{_e(_captured(photo) or "not recorded")}</div>'),
+        ("recorded time", f'<div class="v">{_e(_captured(photo) or "not recorded")}</div>'),
     ]
     cells = "".join(
         f'<div class="kf"><span class="label">{_e(label)}</span>{value}</div>'
@@ -2029,15 +2299,15 @@ def _keyfacts(photo: PhotoResult) -> str:
 
 
 def _layers(photo: PhotoResult, redacted: bool) -> list[PhotoArtifact]:
-    """Every image derived from this file, the working decode first and its maps after."""
+    """The working image first, followed by previews and analytical outputs."""
     if redacted:
         return []
     order = {key: index for index, key in enumerate(_PHOTOGRAPHIC)}
     return sorted(photo.artifacts, key=lambda item: order.get(item.key, len(order)))
 
 
-def _derived(layers: list[PhotoArtifact]) -> list[PhotoArtifact]:
-    """Everything in the image view that is not the working decode of the image."""
+def _analytical_outputs(layers: list[PhotoArtifact]) -> list[PhotoArtifact]:
+    """Everything in the image view that is not the working image."""
     return [item for item in layers if item.key != "main-preview"]
 
 
@@ -2089,8 +2359,8 @@ def _stage_panel(
     picture = _image(base, f"{photo.name}: {base.label}", photo, written).replace(
         "<img ", '<img class="plate-base" '
     )
-    derived = _derived(layers)
-    overlay = '<img class="plate-over" alt="" hidden>' if derived else ""
+    outputs = _analytical_outputs(layers)
+    overlay = '<img class="plate-over" alt="" hidden>' if outputs else ""
     # The frame takes the image's own ratio, so it ends where the picture
     # ends and the corner marks mean the picture rather than the panel.
     shape = (
@@ -2107,16 +2377,16 @@ def _stage_panel(
         f'<span class="reg"{shape}>{_CORNERS}{picture}{overlay}'
         f'<span class="regtag in stage-state">{_e(said)}</span></span></figure>'
     )
-    if derived:
+    if outputs:
         body += (
             '<div class="lens" hidden><span class="lens-label">overlay</span>'
             '<button class="btn" type="button" data-clear aria-pressed="true">image</button>'
-            + "".join(_lens_button(item, layers) for item in derived)
+            + "".join(_lens_button(item, layers) for item in outputs)
             + "</div>"
             '<div class="blend" hidden>'
-            '<span class="swap"><button type="button" data-swap="original" aria-pressed="false">'
-            'original</button><button type="button" data-swap="processed" aria-pressed="false">'
-            "processed</button></span>"
+            '<span class="swap"><button type="button" data-swap="working" aria-pressed="false">'
+            'Working image</button><button type="button" data-swap="analytical" aria-pressed="false">'
+            "Analytical output</button></span>"
             '<label>overlay<input type="range" min="0" max="100" value="85" data-blend'
             ' aria-label="Overlay opacity" disabled><output>85%</output></label></div>'
         )
@@ -2132,6 +2402,7 @@ def _stage_panel(
         f'<span class="sp"></span><span>{_e(base.label)} / {_e(_size(photo.size))}</span>',
         wide=True,
         flush=True,
+        show_caution=True,
     )
 
 
@@ -2158,7 +2429,7 @@ def _map_panel(
     written: _Assets | None,
     frame_id: str,
 ) -> str:
-    """One derived map, framed by whether it is in register with the image.
+    """One analytical output, framed by whether it is registered to the working image.
 
     A map measured on the image's own pixels can be laid over it, and a
     solid frame with corner marks says so. A chart describes the image
@@ -2201,7 +2472,8 @@ def _map_panel(
         "registered to the image" if registered else "not registered to the image",
         body,
         foot=foot,
-        extra="sharp" if close else "",
+        extra=" ".join(part for part in ("sharp" if close else "", "third") if part),
+        show_caution=True,
     )
 
 
@@ -2266,9 +2538,9 @@ def _fileinfo_panel(photo: PhotoResult, frame_id: str) -> str:
         "</tbody></table>"
     )
     copy = (
-        f'<button class="btn needs-js" type="button" data-copy="sha-{photo.number:03d}" hidden'
+        f'<button class="btn icon needs-js" type="button" data-copy="sha-{photo.number:03d}" hidden'
         ' title="Copy the digest"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>'
-        "<span>copy</span></button>"
+        "</button>"
         if photo.sha256
         else ""
     )
@@ -2400,42 +2672,45 @@ def _lamp(status: str) -> str:
 
 
 def _blocks_panel(photo: PhotoResult, frame_id: str) -> str:
-    """Which blocks spoke, how much each said, and the first of what they carry.
+    """Which evidence sources spoke, how much each said, and what they carry.
 
-    The values themselves are gathered once, in the Metadata table: printing all
+    The values themselves are gathered once, in the Evidence table: printing all
     of them beside every image would put the same two thousand lines in the report
     twice and bury the pictures between them.
     """
     rows = []
     total = 0
     for record in photo.evidence:
-        named = BLOCK_LABELS.get(record.block or "") or record.source
-        held = len(record.fields) + sum(1 for value in (record.at, record.geo) if value)
+        named = _source_label(record)
+        carried = _record_pairs(record)
+        held = len(carried)
         total += held
-        carries = ", ".join(list(record.fields)[:9]) or "no named fields"
-        if len(record.fields) > 9:
+        carries = ", ".join(name for name, _value in carried[:9]) or "no additional values"
+        if len(carried) > 9:
             carries += " \u2026"
         rows.append(
-            f'<tr><td><span class="blk meta">{_e(named)}</span></td>'
+            f'<tr><td><span class="blk {_category_class(record.category)}">'
+            f"{_e(record.category)}</span></td><td>{_e(named)}</td>"
             f'<td class="num">{held}</td>'
             f"<td{' class=dim' if not held else ''}>{_e(carries)}</td></tr>"
         )
     body = (
-        '<table><thead><tr><th>block</th><th class="num">fields</th><th>carries</th></tr>'
+        "<table><thead><tr><th>category</th><th>source</th>"
+        '<th class="num">values</th><th>carries</th></tr>'
         f"</thead><tbody>{''.join(rows)}</tbody></table>"
         if rows
-        else '<p class="small">No metadata evidence was recorded.</p>'
+        else '<p class="small">No evidence records were recorded.</p>'
     )
     return _panel(
         "fields",
         frame_id,
-        "Metadata sources",
-        f"{total} field{'' if total == 1 else 's'} in this image",
+        "Evidence sources",
+        f"{total} recorded value{'' if total == 1 else 's'} in this image",
         body,
         reading=_NOTES["fields"],
         caution=_CAUTIONS["fields"],
-        controls='<a class="small" href="#metadata"'
-        f' data-filter="{_e(photo.name)}">open in Metadata</a>',
+        controls='<a class="small" href="#evidence"'
+        f' data-filter="{_e(photo.name)}">open in Evidence</a>',
         flush=bool(rows),
     )
 
@@ -2573,10 +2848,10 @@ def _bytemap_panel(photo: PhotoResult, jpeg: JpegAnalysis, frame_id: str) -> str
         )
     )
     copy = (
-        f'<button class="btn needs-js" type="button" data-copy="hex-{photo.number:03d}" hidden'
+        f'<button class="btn icon needs-js" type="button" data-copy="hex-{photo.number:03d}" hidden'
         ' title="Copy the opening bytes">'
         '<svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>'
-        "<span>copy hex</span></button>"
+        "</button>"
         if heads
         else ""
     )
@@ -2586,6 +2861,7 @@ def _bytemap_panel(photo: PhotoResult, jpeg: JpegAnalysis, frame_id: str) -> str
         "File structure",
         f"{photo.size:,} bytes, in the order the encoder wrote them".replace(",", " "),
         body,
+        wide=True,
         reading=_NOTES["structure"],
         caution=_CAUTIONS["structure"],
         controls=controls + copy,
@@ -2722,7 +2998,7 @@ def _markers_panel(photo: PhotoResult, jpeg: JpegAnalysis, frame_id: str) -> str
         f"<tbody>{rows}</tbody></table></div>"
         f'<div class="qual"><div><span class="label">estimated quality</span>'
         f'<div class="v">{_e(quality)} <span class="small">{_e(basis)}</span></div></div>'
-        '<div><span class="label">encoder signature</span>'
+        '<div><span class="label">JPEG encoding fingerprint</span>'
         f'<div class="v">{_e(signature)} '
         '<span class="small">tables and marker order</span></div></div>'
         '<div><span class="label">sampling</span>'
@@ -2737,6 +3013,7 @@ def _markers_panel(photo: PhotoResult, jpeg: JpegAnalysis, frame_id: str) -> str
         "JPEG marker stream",
         "frame parameters and coding tables",
         body,
+        wide=True,
         reading=_NOTES["markers"],
         caution=_CAUTIONS["markers"],
         foot=f"<span>{len(jpeg.quantization)} quantization</span>"
@@ -2759,8 +3036,56 @@ def _located(photo: PhotoResult) -> str | None:
     return next((record.geo for record in photo.evidence if record.geo), None)
 
 
-def _field_rows(collection: PhotoCollection) -> list[tuple[str, str, str, str, str]]:
-    """Every recorded field of every image, as one list to be sifted."""
+@dataclass(frozen=True, slots=True)
+class _EvidenceRow:
+    number: int
+    image: str
+    category: str
+    source: str
+    field: str
+    value: str
+    match: str
+    state: str
+
+
+def _category_class(category: str) -> str:
+    return {ORIGIN: "org", METADATA: "meta", ACTIVITY: "act"}[category]
+
+
+def _source_label(record: EvidenceRecord) -> str:
+    """Name both the evidence source and the decoded block when they differ."""
+    source = record_label(record)
+    block = BLOCK_LABELS.get(record.block or "", record.block)
+    if block and block.casefold() != source.casefold():
+        return f"{source} / {block}"
+    return source
+
+
+def _record_pairs(record: EvidenceRecord) -> list[tuple[str, str]]:
+    """Every value carried by an evidence record, without losing its typed fields."""
+    fixed: tuple[tuple[str, object | None], ...] = (
+        ("URL", record.url),
+        ("referrer", record.referrer),
+        ("tool", record.tool),
+        ("command", record.command),
+        ("time", record.at),
+        ("stated location", record.location),
+        ("coordinates", record.geo),
+        ("byte count", record.bytes),
+        ("MIME type", record.mime),
+        ("SHA-256", record.sha256),
+        ("note", record.note),
+        ("container", record.container),
+        ("match note", record.match_note),
+    )
+    pairs = [(name, str(value)) for name, value in fixed if value not in (None, "")]
+    pairs.extend((name, str(value)) for name, value in sorted(record.fields.items()))
+    pairs.extend((f"where: {name}", str(value)) for name, value in sorted(record.where.items()))
+    return pairs
+
+
+def _evidence_rows(collection: PhotoCollection) -> list[_EvidenceRow]:
+    """Every recorded value, retaining category, source and match basis."""
     rows = []
     for photo in collection.photos:
         state = ""
@@ -2769,42 +3094,58 @@ def _field_rows(collection: PhotoCollection) -> list[tuple[str, str, str, str, s
         elif any(fact.state == "signal" for fact in photo.facts):
             state = "signal"
         for record in photo.evidence:
-            block = BLOCK_LABELS.get(record.block or "") or record.source
-            pairs = [
-                (label, value)
-                for label, value in (("time", record.at), ("location", record.geo))
-                if value
-            ]
-            pairs.extend(sorted(record.fields.items()))
+            pairs = _record_pairs(record) or [("record", "source present")]
             for name, value in pairs:
-                rows.append((f"#{photo.number:03d} {photo.name}", name, block, value, state))
+                rows.append(
+                    _EvidenceRow(
+                        photo.number,
+                        photo.name,
+                        record.category,
+                        _source_label(record),
+                        name,
+                        value,
+                        record.matched_by,
+                        state,
+                    )
+                )
     return rows
 
 
-def _metadata_table(rows: list[tuple[str, str, str, str, str]]) -> str:
-    """Every recorded value in the collection, gathered once so they can be compared."""
+def _evidence_table(rows: list[_EvidenceRow]) -> str:
+    """Every evidence value in the collection, gathered once for comparison."""
     if not rows:
-        return '<p class="small">No metadata evidence was recorded.</p>'
-    blocks: dict[str, int] = {}
-    for _where, _name, block, _value, _state in rows:
-        blocks[block] = blocks.get(block, 0) + 1
+        return '<p class="small">No evidence records were recorded.</p>'
+    counts = {
+        category: sum(row.category == category for row in rows)
+        for category in (ORIGIN, METADATA, ACTIVITY)
+    }
+    colours = {ORIGIN: "var(--brand)", METADATA: "var(--metadata)", ACTIVITY: "var(--activity)"}
+    present = [category for category in (ORIGIN, METADATA, ACTIVITY) if counts[category]]
     chips = (
-        '<button class="btn" type="button" data-block="" aria-pressed="true">all blocks</button>'
-    )
-    chips += "".join(
-        f'<button class="btn" type="button" data-block="{_e(block)}" aria-pressed="false">'
-        f'<span class="dot" style="color:var(--metadata)"></span>{_e(block)}</button>'
-        for block in sorted(blocks, key=lambda name: -blocks[name])[:6]
+        '<button class="btn" type="button" data-block="" aria-pressed="true">all categories</button>'
+        + "".join(
+            f'<button class="btn" type="button" data-block="{category}" aria-pressed="false">'
+            f'<span class="dot" style="color:{colours[category]}"></span>'
+            f"{category} {counts[category]}</button>"
+            for category in present
+        )
+        if len(present) > 1
+        else ""
     )
     body = "".join(
-        f'<tr data-blk="{_e(block)}"'
-        + (f' data-state="{_e(state)}"' if state else "")
-        + f'><td class="m">{_e(where.split(" ")[0])}</td>'
-        f"<td>{_e(where.partition(' ')[2])}"
-        + (f' <span class="tag {state}">{state}</span>' if state else "")
-        + f'</td><td><span class="blk meta">{_e(block)}</span></td>'
-        f'<td class="v">{_e(name)}</td><td class="v">{_e(value)}</td></tr>'
-        for where, name, block, value, state in rows
+        f'<tr data-blk="{_e(row.category)}"'
+        + (f' data-state="{_e(row.state)}"' if row.state else "")
+        + f' id="evidence-{index + 1:05d}" data-image="{row.number:03d}"><td class="m"><a href="#photo-{row.number:03d}">#{row.number:03d}</a></td><td class="file"><a href="#photo-{row.number:03d}-fields">{_e(row.image)}</a>'
+        + (
+            f' <span class="tag {row.state}" title="File status; this value is not necessarily in conflict">file {row.state}</span>'
+            if row.state
+            else ""
+        )
+        + f'</td><td><span class="blk {_category_class(row.category)}">'
+        f"{_e(row.category)}</span></td><td>{_e(row.source)}</td>"
+        f'<td class="v"><a href="#evidence-{index + 1:05d}">{_e(row.field)}</a></td><td class="v">{_e(row.value)}</td>'
+        f'<td class="m">{_e(row.match)}</td></tr>'
+        for index, row in enumerate(rows)
     )
     switches = (
         '<span class="seg needs-js">'
@@ -2818,77 +3159,35 @@ def _metadata_table(rows: list[tuple[str, str, str, str, str]]) -> str:
         ' title="Only rows from files carrying a conflict or a signal">'
         '<span class="dot" style="color:var(--alert)"></span>flagged files only</button>'
     )
+    chipbar = f'<span class="seg needs-js">{chips}</span>' if chips else ""
     bar = (
         '<div class="meta-bar"><label class="search needs-js">'
         '<svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>'
         '<input type="search" id="meta-filter"'
-        ' placeholder="filter image, block, field or value"'
-        ' aria-label="Filter the metadata table"></label>'
-        f'<span class="seg needs-js">{chips}</span>{switches}'
+        ' placeholder="filter image, category, source, field or value"'
+        ' aria-label="Filter the evidence table"></label>'
+        f"{chipbar}{switches}"
         '<span class="sp"></span>'
         f'<span class="count" id="meta-count">showing {len(rows)} of {len(rows)}</span>'
-        '<button class="btn needs-js" type="button" data-copy="meta-rows" hidden'
+        '<button class="btn icon needs-js" type="button" data-copy="meta-rows" hidden'
         ' title="Copy what is on screen as tab-separated text">'
         '<svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg>'
-        "<span>copy</span></button></div>"
+        "</button></div>"
     )
     table = (
         '<div class="body flush"><div class="scroll"><table>'
         '<thead><tr><th style="width:56px">#</th>'
-        '<th style="width:220px">image</th><th style="width:110px">block</th>'
-        '<th style="width:200px">field</th><th>recorded value</th></tr></thead>'
+        '<th style="width:270px">image</th><th style="width:88px">category</th>'
+        '<th style="width:160px">source</th><th style="width:160px">field</th>'
+        '<th>recorded value</th><th style="width:110px">match basis</th></tr></thead>'
         f'<tbody id="meta-rows">{body}</tbody></table></div>'
         '<p class="small" id="meta-empty" style="padding:12px" hidden>No matching fields.</p>'
         "</div>"
     )
     return (
         f'<div class="panel">{bar}{table}'
-        '<div class="caution"><b>Limitations</b>A value here is what the file records, never'
-        " whether it was true. Where a recorded value disagrees with what was measured, the"
-        " findings for that image say which two things disagree.</div>"
         '<div class="foot"><span>without a script this table is delivered whole and printable;'
         " the filter only hides rows</span></div></div>"
-    )
-
-
-def _scope(collection: PhotoCollection, written: _Assets | None) -> str:
-    """What the report does not claim.
-
-    It belongs to the whole report rather than to a view of it, so it sits under
-    every view instead of taking the top of one. A reader who has to click to
-    reach the sentence saying this settles nothing will not read it.
-    """
-    redaction = (
-        " Pixel-bearing previews and diagnostics were omitted by redaction."
-        if collection.redacted
-        else ""
-    )
-    # Every map names its own encoding, but the consequence belongs here: a
-    # reader looking for fine texture in an ELA map has to know that some of it
-    # can come from the report rather than from the image.
-    encoding = (
-        " Images and continuous-tone maps are stored as JPEG, and fine texture in a map"
-        " can come from that encoding. Histograms and bit planes are stored losslessly."
-        if any(photo.artifacts for photo in collection.photos)
-        else ""
-    )
-    # Where the images are is a fact about the report, and one with a
-    # consequence: a page that points at its material shows whatever is at
-    # those paths now, which is why the digest of each image is beside it.
-    where = (
-        " Each image is shown from where it lies on disk and the maps sit in the"
-        f" directory {_e(written.directory.name)} beside this page, so the two move together."
-        " The digest recorded for an image is the one read at the time; a file that no"
-        " longer matches it is no longer the file described here."
-        if written is not None
-        else " Every image is carried inside this page, which is one portable file."
-    )
-    return (
-        "<p><b>Scope and limitations</b>"
-        "This report records observable file structure, metadata and declared image transformations. "
-        "A conflict is a mechanically supported disagreement. A signal identifies material for review. "
-        "Neither state establishes that an image is authentic or manipulated."
-        f"{where}{encoding}{redaction}</p>"
     )
 
 

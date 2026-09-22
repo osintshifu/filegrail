@@ -5,6 +5,44 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.42.0 - 2026-09-22
+
+### Added
+
+- The README documents `filegrail image`: what the report shows, what the structural pass reads, the analytical outputs and the command's options.
+
+### Changed
+
+- `filegrail image` is the still-image command; `filegrail photo` remains as an alias.
+- The command overview names `image` rather than the alias it replaced.
+- The project's own image assets carry nothing beyond what draws them.
+- A release is built from a list of what belongs in it, so a local working directory cannot reach one by being forgotten.
+- The page is a Digital Image Examination Report: a working image and analytical outputs, shared attributes, a JPEG encoding fingerprint.
+- A linked report shows every image through a bounded working copy in the directory beside the page, never through the original path.
+- SHA-256 is recorded for every image in every report; `--hash` is accepted and changes nothing.
+- The evidence table keeps each record's category, source and match basis, not only its metadata fields.
+- The gallery opens an image's details in place, under the row it sits in, with Overview, File details, Analysis and Evidence controls.
+- Every analytical output is a labelled button beside the image, so none is hidden behind a menu.
+- The gallery reads as a grid of thumbnails or as a list, and keeps the open image, its filters and its scroll position across the switch.
+- Both HTML reports share a compact examination header, scope, expandable report details and summary KPI styling below navigation.
+- Recorded dates keep their clock precision, name the field they came from and filter by year or day.
+- A date that is not a calendar date is left out, and a missing time zone stays missing.
+- Geolocation groups nearby coordinates into selectable local plots with linked image lists, without implying a route.
+- A thumbnail collection supports exact group membership, search and filters; evidence rows link back to images and metadata.
+- Limitations stand behind a mark in each panel's bar and open on hover; under an analytical output they stay in view.
+- Copy buttons are icons and confirm with a check.
+- The summary figures lead into the sections that count them, and previous/next respects the gallery's filter.
+- A summary card says what it holds in its bar; the line of description under it is gone.
+- An image keeps every panel for print and for reading without JavaScript.
+- Working-image coverage counts the copies that exist, and counts the files without one separately.
+- The gallery labels an image that has only an embedded preview, and a method that was not evaluated.
+- The scope essay at the foot of the page is gone; each limitation stands under its panel.
+
+### Fixed
+
+- A report written inside the directory it examines no longer reads its own images on the next run.
+- Re-running a report replaces its directory of images whole, and `--redact` leaves no pixels from an earlier run.
+
 ## 0.41.0 - 2026-09-20
 
 ### Added
@@ -40,7 +78,7 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Local Claude review exports are ignored so screenshots and patches cannot enter a release through a broad staging command.
+- Local review exports are ignored so screenshots and patches cannot enter a release through a broad staging command.
 
 ## 0.40.3 - 2026-09-19
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -45,7 +46,7 @@ if TYPE_CHECKING:  # only for the signatures; the scan brings the real thing
     from .identify import Identifier
     from .models import FileRecord
 
-COMMANDS = ("scan", "photo", "explain", "compare", "doctor", "menu", "clean", "help")
+COMMANDS = ("scan", "image", "photo", "explain", "compare", "doctor", "menu", "clean", "help")
 
 
 # --- parsers -----------------------------------------------------------------
@@ -257,15 +258,21 @@ def _compare_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _photo_parser() -> argparse.ArgumentParser:
+def _image_parser(
+    *, prog: str = "filegrail image", legacy: bool = False
+) -> argparse.ArgumentParser:
     # Imported here so the default in the help text is the one the analyser
     # uses, without the cost of loading the photo readers to build any other
     # parser.
     from .photo import IMAGE_BUDGET, LINKED_IMAGE_BUDGET
 
     parser = argparse.ArgumentParser(
-        prog="filegrail photo",
-        description="Build an HTML forensic report for still images.",
+        prog=prog,
+        description=(
+            "Legacy alias for filegrail image. Build a Digital Image Examination Report."
+            if legacy
+            else "Build a Digital Image Examination Report for still images."
+        ),
     )
     parser.add_argument("path", type=Path, help="Image or directory to examine.")
     parser.add_argument(
@@ -274,7 +281,10 @@ def _photo_parser() -> argparse.ArgumentParser:
         required=True,
         type=Path,
         metavar="FILE",
-        help="Write the photo report to this HTML file; maps go to a directory beside it.",
+        help=(
+            "Write the digital image examination report to this HTML file; working images "
+            "and analytical outputs go to a directory beside it."
+        ),
     )
     parser.add_argument(
         "--redact",
@@ -291,16 +301,18 @@ def _photo_parser() -> argparse.ArgumentParser:
         "--no-recurse", action="store_true", help="Do not descend into subdirectories."
     )
     parser.add_argument(
-        "--hash", action="store_true", dest="hash_files", help="Compute SHA-256 for each image."
+        "--hash",
+        action="store_true",
+        dest="hash_files",
+        help="Accepted for compatibility; SHA-256 is always recorded for every image.",
     )
     parser.add_argument(
         "--embed",
         action="store_true",
         help=(
-            "Carry every image inside the page, as one portable file. Without it the page "
-            "points at the images where they lie and writes its maps to a directory "
-            "beside itself, which keeps the page small and lets a browser load only what "
-            "is on screen."
+            "Carry working images and analytical outputs inside the page, subject to the "
+            "image budget. Without it they are written to a directory beside the page, "
+            "which keeps the HTML small and lets a browser load only what is on screen."
         ),
     )
     parser.add_argument(
@@ -308,7 +320,7 @@ def _photo_parser() -> argparse.ArgumentParser:
         type=_megabytes,
         metavar="MB",
         help=(
-            "Megabytes of previews and diagnostic maps one report may produce "
+            "Megabytes of working images and analytical outputs one report may produce "
             f"(default: {LINKED_IMAGE_BUDGET // (1024 * 1024)}, or "
             f"{IMAGE_BUDGET // (1024 * 1024)} with --embed, where the images have to fit "
             "in a page a browser can open; 0 for no limit). Images past it keep "
@@ -317,6 +329,10 @@ def _photo_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"filegrail {__version__}")
     return parser
+
+
+def _photo_parser() -> argparse.ArgumentParser:
+    return _image_parser(prog="filegrail photo", legacy=True)
 
 
 def _megabytes(value: str) -> int:
@@ -400,6 +416,7 @@ def _menu_parser() -> argparse.ArgumentParser:
 
 PARSERS = {
     "scan": build_parser,
+    "image": _image_parser,
     "photo": _photo_parser,
     "explain": _explain_parser,
     "compare": _compare_parser,
@@ -433,7 +450,8 @@ def main(argv: list[str] | None = None) -> int:
         return _help(rest)
     return {
         "scan": _scan,
-        "photo": _photo,
+        "image": _image,
+        "photo": _image,
         "explain": _explain,
         "compare": _compare,
         "doctor": _doctor,
@@ -664,8 +682,8 @@ def _scan(rest: list[str]) -> int:
     return _emit(report, written)
 
 
-def _photo(rest: list[str]) -> int:
-    args = _photo_parser().parse_args(rest)
+def _image(rest: list[str]) -> int:
+    args = _image_parser().parse_args(rest)
     root = args.path.resolve()
     if not root.exists():
         return _missing(args.path)
@@ -677,16 +695,21 @@ def _photo(rest: list[str]) -> int:
         print(f"filegrail: unsupported image: {args.path}", file=sys.stderr)
         return 2
 
+    output = args.out.resolve()
+    images = None if args.embed else output.with_name(f"{output.stem}.files")
+    staging = _photo_asset_work_path(images, "tmp") if images is not None else None
+    backup = _photo_asset_work_path(images, "bak") if images is not None else None
+    excluded = {output}
+    excluded.update(path for path in (images, staging, backup) if path is not None)
     records = scan(
         root,
         recursive=not args.no_recurse,
-        # A page that points at an image rather than carrying it shows
-        # whatever is at that path when it is opened. The digest is what lets a
-        # reader tell that it is still the file that was read, so a linked report
-        # is hashed whether or not it was asked for.
-        hash_files=args.hash_files or not args.embed,
+        # Image identity is evidence, independent of how the report transports
+        # its working pixels. Every report therefore records the digest.
+        hash_files=True,
         follow_archives=False,
         suffixes=PHOTO_SUFFIXES,
+        exclude_paths=excluded,
     )
     from .photo import IMAGE_BUDGET, LINKED_IMAGE_BUDGET
 
@@ -697,12 +720,35 @@ def _photo(rest: list[str]) -> int:
         print(f"filegrail: no supported images found in {args.path}", file=sys.stderr)
         return 2
 
-    output = args.out.resolve()
-    images = None if args.embed else output.with_name(f"{output.stem}.files")
-    report = render_photo_html(
-        collection, output=output, assets=images, case=args.case, examiner=args.examiner
+    if images is None:
+        report = render_photo_html(
+            collection, output=output, case=args.case, examiner=args.examiner
+        )
+        return _emit_atomic(report, output)
+
+    assert staging is not None and backup is not None
+    try:
+        _prepare_photo_asset_stage(images, staging, backup)
+        report = render_photo_html(
+            collection,
+            output=output,
+            assets=staging,
+            asset_url=images.name,
+            case=args.case,
+            examiner=args.examiner,
+        )
+    except OSError as error:
+        _remove_path(staging)
+        print(f"filegrail: cannot write {images}: {error}", file=sys.stderr)
+        return 2
+    return _emit_photo_bundle(
+        report,
+        output,
+        assets=images,
+        staging=staging,
+        backup=backup,
+        keep_assets=not args.redact,
     )
-    return _emit_atomic(report, output)
 
 
 def _emit(report: str, out: Path | None) -> int:
@@ -728,21 +774,9 @@ def _emit(report: str, out: Path | None) -> int:
 
 def _emit_atomic(report: str, out: Path) -> int:
     """Write a complete report beside its destination, then replace in one step."""
-    said = report if report.endswith("\n") else report + "\n"
     temporary: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            dir=out.parent,
-            prefix=f".{out.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(said)
-            handle.flush()
-            os.fsync(handle.fileno())
+        temporary = _write_report_temporary(report, out)
         os.replace(temporary, out)
     except OSError as error:
         if temporary is not None:
@@ -751,6 +785,99 @@ def _emit_atomic(report: str, out: Path) -> int:
             except OSError:
                 pass
         print(f"filegrail: cannot write {out}: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _write_report_temporary(report: str, out: Path) -> Path:
+    """Write and fsync a report beside its destination without publishing it."""
+    said = report if report.endswith("\n") else report + "\n"
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=out.parent,
+        prefix=f".{out.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(said)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return temporary
+
+
+def _photo_asset_work_path(assets: Path, role: str) -> Path:
+    return assets.with_name(f".{assets.name}.{role}")
+
+
+def _remove_path(path: Path) -> None:
+    """Remove one exact report-owned path without following a directory symlink."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _prepare_photo_asset_stage(assets: Path, staging: Path, backup: Path) -> None:
+    """Recover an interrupted swap and create an empty sidecar staging directory."""
+    _remove_path(staging)
+    if backup.exists() or backup.is_symlink():
+        if not assets.exists() and not assets.is_symlink():
+            os.replace(backup, assets)
+        else:
+            _remove_path(backup)
+    staging.mkdir(parents=True)
+
+
+def _emit_photo_bundle(
+    report: str,
+    out: Path,
+    *,
+    assets: Path,
+    staging: Path,
+    backup: Path,
+    keep_assets: bool,
+) -> int:
+    """Publish linked HTML and its complete sidecar set as one recoverable swap."""
+    temporary: Path | None = None
+    old_moved = False
+    new_installed = False
+    report_installed = False
+    try:
+        temporary = _write_report_temporary(report, out)
+        if assets.exists() or assets.is_symlink():
+            os.replace(assets, backup)
+            old_moved = True
+        if keep_assets:
+            os.replace(staging, assets)
+            new_installed = True
+        else:
+            _remove_path(staging)
+        os.replace(temporary, out)
+        report_installed = True
+        temporary = None
+        if old_moved:
+            _remove_path(backup)
+    except OSError as error:
+        if not report_installed:
+            if new_installed:
+                try:
+                    _remove_path(assets)
+                except OSError:
+                    pass
+            if old_moved and (backup.exists() or backup.is_symlink()):
+                try:
+                    os.replace(backup, assets)
+                except OSError:
+                    pass
+        for path in (temporary, staging):
+            if path is not None:
+                try:
+                    _remove_path(path)
+                except OSError:
+                    pass
+        print(f"filegrail: cannot replace report bundle {out}: {error}", file=sys.stderr)
         return 2
     return 0
 

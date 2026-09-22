@@ -1,6 +1,6 @@
 <div align="center">
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.41.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
+[![PyPI](https://img.shields.io/badge/pypi-v0.42.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
 
 </div>
 
@@ -23,7 +23,7 @@
 
 <div align="center">
 
-[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Usage](#usage) · [Automation](#automation-and-exports)
+[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Images](#digital-image-examination) · [Usage](#usage) · [Automation](#automation-and-exports)
 
 </div>
 
@@ -943,6 +943,71 @@ The complete report remains one portable HTML file.
 
 ---
 
+## Digital image examination
+
+`filegrail image` examines still images and writes its own report. It runs the same provenance and metadata scan as any other file, adds what the image's own structure records about how it was encoded, and, with the optional pixel extra installed, renders a set of diagnostic views of the picture.
+
+```bash
+filegrail image ./photos --out examination.html --case 2026/014 --examiner "J. Nowak"
+```
+
+The report is one HTML file that loads no external assets and makes no network requests. Working images and diagnostic renderings go to a directory beside it, so a browser loads only what is on screen.
+
+### Report sections
+
+| Section | What it answers |
+| --- | --- |
+| Summary | The collection in six figures: images examined, how many have a decodable working image and how many do not, conflicts, review signals and recorded values |
+| Images | Every image with its analysis opened under the row it sits in: file facts, metadata fields, evidence coverage, JPEG structure and marker list |
+| Findings | Numbered disagreements and review signals, each a link into the image it came from |
+| Shared attributes | Images grouped by claimed make, body serial, lens and JPEG encoding fingerprint |
+| Dates | Every recorded capture time on one axis, one dot per image |
+| Locations | Recorded coordinates as an area map, a local plot and a table |
+| Evidence | Every value read, with its category, its source and the basis it was matched on |
+
+### What the structure records
+
+The JPEG pass walks the marker stream to the end of the file: encoding and dimensions, component sampling, quantization and Huffman tables, restart interval, scan count, comments and any bytes after the end marker. Quantization quality is reported as an exact IJG table match or as the nearest estimate, and it describes the tables the file carries now, not its first save.
+
+The EXIF pass walks IFD0, EXIF, GPS, Interoperability, SubIFDs and IFD1, and keeps a valid IFD1 thumbnail for the report.
+
+Where two of those records disagree, the report numbers it as a finding: JPEG dimensions against the ones EXIF states, an embedded preview whose aspect ratio does not match the image, bytes appended after the end marker.
+
+### Analytical outputs
+
+`pip install 'filegrail[photo]'` adds Pillow and NumPy, and with them the pixel diagnostics. Without the extra the report states for each one that it was not evaluated.
+
+| Output | What it makes visible |
+| --- | --- |
+| Working image | The picture decoded and scaled to a bounded size; every map below is measured from this decode |
+| Embedded preview | The small copy the camera wrote inside the file, and the one in the vendor's own block |
+| Preview comparison | The embedded preview against the image, where different framing or tone points at a later edit |
+| Histogram | How often each value occurs, per channel and in luminance |
+| Luminance gradient | How brightness changes from one pixel to the next, as a direction |
+| Noise residual | What is left when the picture is taken away and only local variation remains |
+| Bit planes | Single bits of the luminance channel, the highest and three of the lowest |
+| Error level analysis | The image against itself saved again, at two declared qualities |
+
+Each output states what it shows and what would be a mistake to conclude from it. No result is converted into an authenticity or manipulation score.
+
+### Image options
+
+| Option | Purpose |
+| --- | --- |
+| `-o`, `--out FILE` | Write the report here; working images and outputs go to a directory beside it |
+| `--case REF` | Case reference for the report's title block |
+| `--examiner NAME` | Examiner named in the report's title block |
+| `--redact` | Redact text and omit every pixel-bearing preview and diagnostic |
+| `--embed` | Carry the images inside the page instead of beside it |
+| `--image-budget MB` | Megabytes of images one report may produce; default 512, or 16 with `--embed`, and `0` for no limit |
+| `--no-recurse` | Do not descend into subdirectories |
+
+An image past the budget keeps every fact read from it and loses only its pictures. SHA-256 is recorded for every image, and `filegrail photo` is accepted as an alias for the same command.
+
+Which containers are selected, and what structural coverage each one gets, are in the [format reference](docs/FORMATS.md#digital-image-examination).
+
+---
+
 ## Usage
 
 ```text
@@ -958,6 +1023,7 @@ Running `filegrail` without arguments shows the command overview without startin
 | --- | --- |
 | `filegrail PATH` | Analyze a file or directory |
 | `filegrail scan PATH` | Explicit scan form |
+| `filegrail image PATH --out FILE` | Build a digital image examination report |
 | `filegrail explain FILE` | Show the evidence behind one file |
 | `filegrail compare A B` | Compare two files |
 | `filegrail doctor` | Inspect available local evidence sources |

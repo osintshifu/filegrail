@@ -182,6 +182,7 @@ def iter_files(
     recursive: bool = True,
     follow_symlinks: bool = False,
     suffixes: set[str] | None = None,
+    exclude_paths: set[Path] | None = None,
     skip_names: bool = True,
     unsearched: Unsearched | None = None,
 ) -> Iterator[Path]:
@@ -191,8 +192,14 @@ def iter_files(
     walk so an excluded file is never opened, never hashed and never parsed.
     """
 
+    excluded = {path.resolve() for path in exclude_paths or ()}
+
+    def is_excluded(path: Path) -> bool:
+        resolved = path.resolve()
+        return any(resolved == blocked or blocked in resolved.parents for blocked in excluded)
+
     def wanted(path: Path) -> bool:
-        return suffixes is None or path.suffix.lower() in suffixes
+        return not is_excluded(path) and (suffixes is None or path.suffix.lower() in suffixes)
 
     def note_unreadable(error: OSError) -> None:
         """`os.walk` swallows these by default, and a swallowed one is a hole."""
@@ -209,6 +216,8 @@ def iter_files(
     ):
         keep = []
         for name in sorted(subdirectories):
+            if is_excluded(Path(directory) / name):
+                continue
             if skip_names and (name in SKIP_DIRECTORIES or name.endswith(".repro")):
                 if unsearched is not None:
                     unsearched.by_name.append(str(Path(directory) / name))
@@ -231,6 +240,7 @@ def scan(
     use_shell_history: bool = True,
     follow_archives: bool = True,
     suffixes: set[str] | None = None,
+    exclude_paths: set[Path] | None = None,
     home: Path | None = None,
     stats: dict[str, int] | None = None,
     skip_names: bool = True,
@@ -254,6 +264,7 @@ def scan(
             root,
             recursive=recursive,
             suffixes=suffixes,
+            exclude_paths=exclude_paths,
             skip_names=skip_names,
             unsearched=missed,
         )

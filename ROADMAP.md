@@ -124,6 +124,26 @@ The signature check grows into format identification: the format and its version
 
 Canon CR3 and Fujifilm RAF, TNEF `winmail.dat`, and the member list of 7z and RAR archives without unpacking them. Each is added only once a real file is available to check it against.
 
+## Still images
+
+`filegrail image` examines still images and writes its own report. The structural pass, the
+analytical outputs and the report are released; what is left is below.
+
+### Two images side by side
+
+One report comparing two images across the same methods, for the case where the question is
+whether one came from the other.
+
+### A scan and an examination as one case
+
+The two reports stay separate workflows. An explicit mapping between the files of a scan and
+the images of an examination would let a finding in one open the other.
+
+### Values behind a shifted maker note
+
+The footer a Canon note ends with separates legitimate padding from a shifted note base. Reading
+it would recover the values that are currently skipped rather than risk inventing them.
+
 ## Later
 
 ### Comparing two scans

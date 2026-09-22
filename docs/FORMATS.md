@@ -67,9 +67,9 @@ somebody had the document open.
 So decoded fields stay visible by default. `--brief` folds them down, `--json`
 keeps all of them, and long values wrap instead of being cut.
 
-## Photo-forensics analysis
+## Digital image examination
 
-`filegrail photo PATH --out REPORT.html` is a separate still-image workflow. It reuses the provenance and metadata scan, then adds structural facts and, when installed, optional bounded pixel diagnostics.
+`filegrail image PATH --out REPORT.html` is a separate still-image workflow. It reuses the provenance and metadata scan, then adds structural facts and, when installed, optional bounded pixel diagnostics.
 
 The native JPEG pass reads the marker stream through EOI, including SOF encoding and dimensions, component sampling, DQT and DHT summaries, DRI, SOS count, comments, restart markers and bytes after EOI. Quantization quality is labelled as either an exact IJG table match or the nearest heuristic estimate. It describes the current encoding tables, not the first save of the image.
 

@@ -30,15 +30,5 @@ docs/DESIGN.md
 # name. It says how to work in this checkout, not what the project is.
 AGENTS.md
 
-# Claude Code's own working directory: session state, settings and scratch
-# worktrees. It is about this checkout, not about the project - and a build
-# run here sweeps whatever it finds into the source distribution.
-.claude/
-
-# Review exports from local Claude sessions. Keep the screenshots and patches
-# available to the operator without making them candidates for a release commit.
-Claude outputs/
-
-# The working instructions for this checkout, kept local like the design
-# document. `.git/info/exclude` hides it from git but not from the build.
-CLAUDE.md
+# Shared working state for the coding agents on this machine; never published.
+HANDOFF.md

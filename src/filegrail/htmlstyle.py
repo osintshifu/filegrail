@@ -111,6 +111,7 @@ border-radius:var(--r);color:var(--faint);align-items:center;justify-content:cen
 .fold .ic{width:14px;height:14px;transform:rotate(90deg);transition:transform .15s}
 section.folded .fold .ic{transform:none}
 section.folded .sec-body{display:none}
+#detail .sec-body{overflow-x:auto}
 section.folded .h{margin-bottom:0}
 section.folded{padding-bottom:36px}
 .h h2{margin:0;font:600 var(--t-h2)/1.25 var(--sans);letter-spacing:-.25px}

@@ -24,10 +24,10 @@ from filegrail.cli import PARSERS, main
 #: refuses to run without a terminal, so it has no document to stamp.
 INTERACTIVE = {"menu"}
 
-#: `photo` writes one HTML report and takes no `--json` at all. There is no
+#: `image` (and its alias `photo`) writes one HTML report and takes no `--json`. There is no
 #: machine-readable document here to stamp, and inventing one would be a second
 #: schema to keep for a reader nobody has asked for.
-HTML_ONLY = {"photo"}
+HTML_ONLY = {"image", "photo"}
 
 
 @pytest.fixture(autouse=True)

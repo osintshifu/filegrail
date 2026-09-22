@@ -41,7 +41,7 @@ def available() -> bool:
 def analyse_pixels(
     path: Path, previews: Iterable[EmbeddedPreview], *, max_edge: int = 1024
 ) -> tuple[list[PhotoArtifact], list[PhotoFact]]:
-    """Build bounded image diagnostics, isolating failure of each derived method."""
+    """Build bounded working pixels and isolate failure of each analytical method."""
     if not available():
         return [], [
             PhotoFact(
@@ -59,7 +59,7 @@ def analyse_pixels(
     artifacts = [
         _artifact(
             "main-preview",
-            "Main image preview",
+            "Working image",
             "bounded RGB decode",
             working,
             f"RGB; longest edge <= {max_edge} px",
@@ -162,7 +162,7 @@ def _working_image(path: Path, max_edge: int) -> Any:
 
 
 def _artifact(key: str, label: str, method: str, image: Any, parameters: str) -> PhotoArtifact:
-    """Encode one derived image, saying in its parameters how it was stored.
+    """Encode one analytical output, saying in its parameters how it was stored.
 
     A reader has to be able to tell a measurement from the report's own
     encoding, so the encoding is named beside every other parameter rather

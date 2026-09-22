@@ -30,12 +30,12 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 
-from . import __version__
+from . import __version__, reportchrome
 from .analysis import NOTHING, REVIEW, Case, CaseFile, Conflict, Finding, Pivots, named
 from .casereport import _ABSENT, _LISTED, _PER_FILE, _capital, _facts, _type_name
 from .graph import Graph, Node, Relationship, build_graph, identifier_node_id
 from .graphlayout import HEIGHT, WIDTH, Picture, picture
-from .htmlicons import FAVICON, ICONS, MARK, MARK_SMALL
+from .htmlicons import FAVICON, ICONS, MARK_SMALL
 from .htmlscript import SCRIPT
 from .htmlstyle import STYLE
 from .identify import PLACE, Identifier
@@ -194,19 +194,19 @@ def render_html(
         '<meta name="color-scheme" content="dark light">',
         f"<title>filegrail · {_e(Path(case.root).name or str(case.root))}</title>",
         FAVICON,
-        f"<style>{STYLE}</style>",
+        f"<style>{STYLE}{reportchrome.STYLE}</style>",
         "</head>",
         "<body>",
         ICONS,
     ]
     masthead = [
-        '<header class="mast" id="top">',
-        f'<h1 class="word">filegrail <small>v{_e(__version__)} · investigation report</small></h1>',
-        '<div class="mast-body">',
-        f'<div class="mast-mark">{MARK}</div>',
-        _fields(facts, css="facts", copy=frozenset({"target", "profile", "report"})),
-        "</div>",
-        "</header>",
+        reportchrome.header(
+            "File investigation",
+            str(case.root),
+            [("Generated", moment), ("Files", f"{len(records):,}"), ("Size", _size(contents.size))]
+            + ([("Media", "Redacted")] if redacted else []),
+            facts,
+        )
     ]
     links = "".join(
         f'<a href="#{key}">{_e(short)}'

@@ -85,7 +85,7 @@ INVESTIGATE = (
             ("filegrail evidence.pdf", "metadata and origin"),
             ("filegrail explain evidence.pdf", "the evidence behind it"),
             ("filegrail compare a.jpg b.jpg", "two files side by side"),
-            ("filegrail photo image.jpg --out photo.html", "photo forensics report"),
+            ("filegrail image photo.jpg --out image.html", "digital image examination"),
             ("filegrail evidence.pdf --hash", "with its SHA-256"),
         ),
     ),
@@ -122,7 +122,7 @@ VERIFY = (
 #: Named rather than described. What each one does is a sentence away in
 #: `filegrail help <command>`, and six sentences here would double the screen.
 #: `help` is not in the list because it is the line underneath it.
-COMMANDS = ("scan", "photo", "explain", "compare", "doctor", "menu", "clean")
+COMMANDS = ("scan", "image", "explain", "compare", "doctor", "menu", "clean")
 
 #: Below this the wordmark and the attributes cannot sit side by side.
 _SIDE_BY_SIDE = 78

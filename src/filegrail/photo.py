@@ -363,12 +363,12 @@ def _analyse_photo(
             else:
                 artifacts.extend(pixel_artifacts)
                 facts.extend(pixel_facts)
-                derived = sum(item.key != "main-preview" for item in pixel_artifacts)
+                outputs = sum(item.key != "main-preview" for item in pixel_artifacts)
                 methods.append(
                     MethodCoverage(
                         "Pixel diagnostics",
                         "evaluated",
-                        f"{derived} derived maps produced",
+                        f"{outputs} analytical outputs produced",
                     )
                 )
 

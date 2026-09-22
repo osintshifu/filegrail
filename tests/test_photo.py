@@ -167,7 +167,7 @@ def test_integrates_optional_pixel_artifacts(tmp_path: Path, monkeypatch):
     result = analyse_photos([_record(photo)], tmp_path).photos[0]
 
     assert result.methods[-1].status == "evaluated"
-    assert result.methods[-1].detail == "7 derived maps produced"
+    assert result.methods[-1].detail == "7 analytical outputs produced"
     assert "main-preview" in {item.key for item in result.artifacts}
     assert "embedded-preview-comparison" in {item.key for item in result.artifacts}
 

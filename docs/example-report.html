@@ -113,6 +113,7 @@ border-radius:var(--r);color:var(--faint);align-items:center;justify-content:cen
 .fold .ic{width:14px;height:14px;transform:rotate(90deg);transition:transform .15s}
 section.folded .fold .ic{transform:none}
 section.folded .sec-body{display:none}
+#detail .sec-body{overflow-x:auto}
 section.folded .h{margin-bottom:0}
 section.folded{padding-bottom:36px}
 .h h2{margin:0;font:600 var(--t-h2)/1.25 var(--sans);letter-spacing:-.25px}
@@ -655,6 +656,42 @@ padding:6px 0;border-bottom:1px solid var(--line)}
 .tbl.relationships td:last-child{grid-column:1/-1}
 .tbl.relationships summary{display:none}
 }
+
+.mast.report-head{padding:32px max(24px,calc((100% - 1360px)/2)) 20px;
+border-top:3px solid var(--brand);border-bottom:1px solid var(--line)}
+.report-head .report-eyebrow{display:flex;gap:12px;align-items:center;color:var(--accent);
+font:500 11px/1.5 var(--mono);letter-spacing:.13em;text-transform:uppercase}
+.report-head .report-eyebrow span{color:var(--muted);letter-spacing:0;text-transform:none}
+.report-head .report-title{font:500 clamp(28px,3vw,42px)/1.15 var(--sans);
+letter-spacing:-.035em;margin:12px 0 14px;color:var(--ink)}
+.report-head .report-meta{font-family:var(--mono);display:flex;
+flex-wrap:wrap;gap:8px 24px;margin:0 0 14px;
+font-size:12px;color:var(--ink-2)}
+.report-head .report-meta div{display:flex;gap:8px;align-items:baseline}
+.report-head dt{color:var(--muted);font-weight:400}
+.report-head dd{margin:0;overflow-wrap:anywhere}
+.report-head .report-scope{display:flex;align-items:baseline;gap:12px;
+font:12px/1.6 var(--mono);color:var(--ink-2);overflow-wrap:anywhere}
+.report-head .report-scope span{flex:none;color:var(--muted)}
+.report-head details{margin-top:12px;font-size:12px;color:var(--muted)}
+.report-head summary{cursor:pointer;width:fit-content}
+.report-head details dl{display:grid;grid-template-columns:auto minmax(0,1fr);
+gap:6px 18px;padding:12px 0;font:12px/1.6 var(--mono)}
+.report-head .figures{justify-content:flex-start;flex-wrap:wrap;gap:16px 0;
+margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.report-head .figures li{padding:0 22px;border-left:1px solid var(--line)}
+.report-head .figures li:first-child{padding-left:0;border:0}
+.report-head .figures .n{font-size:22px}
+.report-head .figures .label{font-size:10px;letter-spacing:.08em}
+.cards{gap:18px 0}.cards .card{background:transparent;border:0;border-left:1px solid var(--line);
+border-radius:0;box-shadow:none;min-height:0;padding:0 16px}.cards .card:first-child{border-left:0}
+.cards .card{gap:4px}.cards .card .v{font-family:var(--mono);font-size:24px}
+.cards .card .s{font-size:11px}
+@media(max-width:600px){.mast.report-head{padding:22px 16px 16px}
+.report-head .report-meta{gap:6px 16px}.report-head .figures{display:grid;
+grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 8px}
+.report-head .figures li{padding:0;border:0}.report-head .figures .label{white-space:normal}}
+@media print{.report-head details dl{display:grid}.report-head summary{display:none}}
 </style>
 </head>
 <body>
@@ -672,13 +709,7 @@ padding:6px 0;border-bottom:1px solid var(--line)}
 <symbol id="i-expand" viewBox="0 0 16 16"><path d="M1 6V2.5A1.5 1.5 0 0 1 2.5 1H6v1.5H2.5V6H1Zm9-5h3.5A1.5 1.5 0 0 1 15 2.5V6h-1.5V2.5H10V1ZM1 10h1.5v3.5H6V15H2.5A1.5 1.5 0 0 1 1 13.5V10Zm12.5 0H15v3.5a1.5 1.5 0 0 1-1.5 1.5H10v-1.5h3.5V10Z"/></symbol>
 <symbol id="i-collapse" viewBox="0 0 16 16"><path d="M6 1v3.5A1.5 1.5 0 0 1 4.5 6H1V4.5h3.5V1H6Zm4 0h1.5v3.5H15V6h-3.5A1.5 1.5 0 0 1 10 4.5V1ZM1 10h3.5A1.5 1.5 0 0 1 6 11.5V15H4.5v-3.5H1V10Zm9 1.5a1.5 1.5 0 0 1 1.5-1.5H15v1.5h-3.5V15H10v-3.5Z"/></symbol>
 </svg>
-<header class="mast" id="top">
-<h1 class="word">filegrail <small>v0.40.3 · investigation report</small></h1>
-<div class="mast-body">
-<div class="mast-mark"><svg class="mark" viewBox="-26 -26 196 256" aria-hidden="true"><path fill="var(--brand-soft)" stroke="var(--brand)" stroke-width="1.5" vector-effect="non-scaling-stroke" fill-rule="evenodd" d="M24,48 A48,48 0 0 1 72,0 H108 V24 H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z"/></svg></div>
-<dl class="facts"><dt>target</dt><dd><span class="v">/tmp/filegrail-example/case</span><button class="copy" type="button" title="copy" aria-label="copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ok" aria-hidden="true"><use href="#i-check"/></svg><svg class="ic no" aria-hidden="true"><use href="#i-x"/></svg></button></dd><dt>profile</dt><dd><span class="v">/tmp/filegrail-example/home · external</span><button class="copy" type="button" title="copy" aria-label="copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ok" aria-hidden="true"><use href="#i-check"/></svg><svg class="ic no" aria-hidden="true"><use href="#i-x"/></svg></button></dd><dt>scanned</dt><dd>2026-09-19 07:50 CEST · 11 files · 4.3 KB</dd><dt>options</dt><dd>--pivots</dd><dt>report</dt><dd><span class="v">/tmp/filegrail-example/example-report.html</span><button class="copy" type="button" title="copy" aria-label="copy"><svg class="ic" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ok" aria-hidden="true"><use href="#i-check"/></svg><svg class="ic no" aria-hidden="true"><use href="#i-x"/></svg></button></dd></dl>
-</div>
-</header>
+<header class="mast report-head" id="top"><div class="report-eyebrow">FileGrail <span>Evidence examination report</span></div><h1 class="report-title">File investigation</h1><dl class="report-meta"><div><dt>Generated</dt><dd>2026-09-22 22:29 CEST</dd></div><div><dt>Files</dt><dd>11</dd></div><div><dt>Size</dt><dd>4.3 KB</dd></div></dl><div class="report-scope"><span>Scope</span><b>/tmp/filegrail-example/case</b></div><details><summary>Report details</summary><dl><dt>FileGrail</dt><dd>0.42.0</dd><dt>target</dt><dd>/tmp/filegrail-example/case</dd><dt>profile</dt><dd>/tmp/filegrail-example/home · external</dd><dt>scanned</dt><dd>2026-09-22 22:29 CEST · 11 files · 4.3 KB</dd><dt>options</dt><dd>--pivots</dd><dt>report</dt><dd>/tmp/filegrail-example/example-report.html</dd></dl></details></header>
 <nav class="nav"><a class="home" href="#top" title="Back to the top" aria-label="Back to the top"><svg class="mark" viewBox="0 0 144 204" aria-hidden="true"><path fill="var(--brand)" fill-rule="evenodd" d="M24,48 A48,48 0 0 1 72,0 H108 V24 H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z"/></svg></a><a href="#summary">Summary</a><a href="#findings">Findings <b>7</b></a><a href="#coverage">Coverage</a><a href="#timeline">Timeline <b>10</b></a><a href="#files">Files <b>11</b></a><a href="#relationships">Related <b>42</b></a><a href="#pivots">Pivots <b>14</b></a><a href="#conflicts">Conflicts <b>1</b></a><a href="#detail">Detail <b>9</b></a><a href="#notes">Notes</a><span class="sp"></span>
 <label class="search"><input id="search" type="search" placeholder="search paths, values, fields" aria-label="Search the report" autocomplete="off" spellcheck="false"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="hits" id="hits"></span><kbd>/</kbd></label>
 <div class="mast-actions">
@@ -699,8 +730,8 @@ padding:6px 0;border-bottom:1px solid var(--line)}
 </main>
 <button class="btn icon to-top" id="to-top" type="button" title="Back to top" aria-label="Back to top" hidden><svg class="ic" aria-hidden="true"><use href="#i-up"/></svg></button>
 <footer>
-<span>filegrail v0.40.3 · Apache-2.0</span>
-<span>generated 2026-09-19 07:50 CEST</span>
+<span>filegrail v0.42.0 · Apache-2.0</span>
+<span>generated 2026-09-22 22:29 CEST</span>
 <span>this page makes no network requests</span>
 </footer>
 <script>

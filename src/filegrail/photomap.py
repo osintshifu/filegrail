@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from html import escape
 
 #: The frame both outlines are drawn in: longitude across 1000, latitude down 500.
 WIDTH = 1000
@@ -83,25 +84,39 @@ def defs() -> str:
     )
 
 
-def outline(view: str, dots: tuple[tuple[float, float, float], ...] = (), extra: str = "") -> str:
+def outline(view: str, dots: tuple[Dot, ...] = (), extra: str = "") -> str:
     """The coastline and borders, with a ring around each point that was recorded.
 
     `view` is a viewBox in the frame above, so the same two paths serve the world
-    and any window onto it without the page carrying a second copy of either.
+    and any window onto it without the page carrying a second copy of either. A
+    dot that names its image is a link to it.
     """
-    marks = "".join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="none" stroke="var(--alert)"'
-        ' stroke-width="1.2" vector-effect="non-scaling-stroke"/>'
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius / 3:.1f}" fill="var(--alert)"/>'
-        for x, y, radius in dots
-    )
+    marks = "".join(_mark(dot) for dot in dots)
     return (
         f'<svg viewBox="{view}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet"'
         ' role="img" aria-label="Where the recorded coordinates fall">'
         '<use href="#m-world" fill="#1E1F22" stroke="#45464A" stroke-width=".6"/>'
-        '<use href="#m-borders" fill="none" stroke="#2C2D30" stroke-width=".5"/>'
+        '<use href="#m-borders" fill="none" stroke="#3A3E43" stroke-width=".5"/>'
         f"{extra}{marks}</svg>"
     )
+
+
+#: A point to draw: x, y and radius in the frame above, and, when the dot stands
+#: for one image, that image's number and name.
+Dot = tuple[float, float, float] | tuple[float, float, float, int, str]
+
+
+def _mark(dot: Dot) -> str:
+    x, y, radius = dot[0], dot[1], dot[2]
+    rings = (
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="none" stroke="var(--alert)"'
+        ' stroke-width="1.2" vector-effect="non-scaling-stroke"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius / 3:.1f}" fill="var(--alert)"/>'
+    )
+    if len(dot) < 5:
+        return rings
+    number, name = dot[3], dot[4]
+    return f'<a href="#photo-{number:03d}"><title>#{number:03d} {escape(name)}</title>{rings}</a>'
 
 
 def window(fixes: list[Fix]) -> str:
@@ -111,7 +126,7 @@ def window(fixes: list[Fix]) -> str:
     top, bottom = min(y for _, y in points), max(y for _, y in points)
     # Below about sixty units the 1:110m outline has nothing left to show, so a
     # window is never cut finer than that however close together the points are.
-    span = min(max(right - left, (bottom - top) * 2, 60.0), float(WIDTH))
+    span = min(max((right - left) * 1.35, (bottom - top) * 2.7, 60.0), float(WIDTH))
     centre_x, centre_y = (left + right) / 2, (top + bottom) / 2
     origin_x = min(max(centre_x - span / 2, 0.0), WIDTH - span)
     origin_y = min(max(centre_y - span / 4, 0.0), HEIGHT - span / 2)
@@ -127,17 +142,25 @@ def site(fixes: list[Fix]) -> tuple[str, str, float]:
     if not fixes:
         return "", "", 0.0
     centre_lat = sum(fix.latitude for fix in fixes) / len(fixes)
-    centre_lon = sum(fix.longitude for fix in fixes) / len(fixes)
+    reference = fixes[0].longitude
+    centre_lon = reference + sum(
+        (fix.longitude - reference + 180) % 360 - 180 for fix in fixes
+    ) / len(fixes)
+    centre_lon = (centre_lon + 180) % 360 - 180
     across = 111_320.0 * math.cos(math.radians(centre_lat))
     offsets = [
-        (fix, (fix.longitude - centre_lon) * across, (fix.latitude - centre_lat) * 111_320.0)
+        (
+            fix,
+            ((fix.longitude - centre_lon + 180) % 360 - 180) * across,
+            (fix.latitude - centre_lat) * 111_320.0,
+        )
         for fix in fixes
     ]
     reach = max(max(abs(east), abs(north)) for _fix, east, north in offsets)
     # The window comes from the spread rather than a fixed number, so three points
     # 200 m apart and three points 20 km apart are both legible at the same size.
     span = max(_rounded(reach * 2.4), 40.0)
-    scale = 900.0 / span
+    scale = min(900.0 / span, 500.0 / max(max(abs(north) for _, _, north in offsets) * 2.4, 40.0))
     step = _rounded(span / 6)
     grid = []
     at = 0
@@ -145,53 +168,51 @@ def site(fixes: list[Fix]) -> tuple[str, str, float]:
         for offset in {at * step, -at * step}:
             grid.append(
                 f'<line x1="{450 + offset * scale:.1f}" y1="0"'
-                f' x2="{450 + offset * scale:.1f}" y2="600" stroke="#1E1F22"/>'
+                f' x2="{450 + offset * scale:.1f}" y2="600" stroke="#292C30"/>'
                 f'<line x1="0" y1="{300 + offset * scale:.1f}" x2="900"'
-                f' y2="{300 + offset * scale:.1f}" stroke="#1E1F22"/>'
+                f' y2="{300 + offset * scale:.1f}" stroke="#292C30"/>'
             )
         at += 1
     rings = "".join(
-        f'<circle cx="450" cy="300" r="{radius * scale:.1f}" fill="none" stroke="#2C2D30"'
+        f'<circle cx="450" cy="300" r="{radius * scale:.1f}" fill="none" stroke="#3A3E43"'
         ' stroke-dasharray="3 4"/>'
-        f'<text x="{452 + radius * scale:.1f}" y="296" fill="#7B828B" font-size="10"'
+        f'<text x="{452 + radius * scale:.1f}" y="296" fill="#7B828B" font-size="16"'
         f' font-family="IBM Plex Mono,monospace">{_metres(radius)}</text>'
         for radius in (step, step * 2, step * 3)
         if radius * scale < 440
     )
-    marks, walk = [], []
+    marks = []
+    labels: list[tuple[float, float]] = []
     for fix, east, north in offsets:
         x, y = 450 + east * scale, 300 - north * scale
-        walk.append(f"{x:.1f},{y:.1f}")
-        said = " · ".join(part for part in (fix.at, _gps(fix)) if part)
+        label_y = y - 14
+        while any(
+            abs(x - previous_x) < 85 and abs(label_y - previous_y) < 24
+            for previous_x, previous_y in labels
+        ):
+            label_y -= 25
+        labels.append((x, label_y))
         marks.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="none" stroke="#D08770"'
+            f'<a href="#photo-{fix.number:03d}"><title>#{fix.number:03d} {escape(fix.name)}</title>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="10" fill="#182E29" stroke="#7FB5A8"'
             ' stroke-width="1.5"/>'
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.2" fill="#D08770"/>'
-            f'<text x="{x + 12:.1f}" y="{y - 6:.1f}" fill="#E6E8EB" font-size="12"'
-            f' font-family="IBM Plex Mono,monospace">#{fix.number:03d}</text>'
-            f'<text x="{x + 12:.1f}" y="{y + 8:.1f}" fill="#9AA1A9" font-size="10"'
-            f' font-family="IBM Plex Mono,monospace">{said}</text>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#7FB5A8"/>'
+            f'<text class="point-label" x="{x + 12:.1f}" y="{label_y:.1f}" fill="#E6E8EB" font-size="18"'
+            f' font-family="IBM Plex Mono,monospace">#{fix.number:03d}</text></a>'
         )
-    order = (
-        f'<polyline points="{" ".join(walk)}" fill="none" stroke="#C9A66B" stroke-width="1"'
-        ' stroke-dasharray="2 4"/>'
-        if len(walk) > 1
-        else ""
-    )
     drawing = (
         '<svg viewBox="0 0 900 600" width="100%" height="100%" role="img"'
         ' aria-label="The located images plotted in metres">'
         + "".join(grid)
         + rings
-        + order
         + "".join(marks)
         + f'<line x1="40" y1="560" x2="{40 + step * scale:.1f}" y2="560" stroke="#E6E8EB"'
         ' stroke-width="2"/>'
-        f'<text x="40" y="550" fill="#C3C8CE" font-size="11"'
+        f'<text x="40" y="550" fill="#C3C8CE" font-size="16"'
         f' font-family="IBM Plex Mono,monospace">{_metres(step)}</text>'
         '<g transform="translate(860,50)"><line x1="0" y1="18" x2="0" y2="-14"'
         ' stroke="#E6E8EB" stroke-width="1.5"/><path d="M-5,-8 L0,-18 L5,-8 Z" fill="#E6E8EB"/>'
-        '<text x="0" y="34" fill="#C3C8CE" font-size="11" text-anchor="middle"'
+        '<text x="0" y="34" fill="#C3C8CE" font-size="16" text-anchor="middle"'
         ' font-family="IBM Plex Mono,monospace">N</text></g></svg>'
     )
     centre = (

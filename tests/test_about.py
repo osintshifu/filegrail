@@ -122,10 +122,14 @@ def test_it_shows_a_short_way_in_rather_than_every_example():
 
 
 def test_every_command_is_named():
-    screen = _screen()
+    """`image` used to pass this by appearing inside `image.jpg` in an example,
+    which is how the overview went on offering `photo` after the command was
+    renamed. The list itself is what has to name them."""
+    listed = set(about.COMMANDS)
 
-    for command in CLI_COMMANDS:
-        assert command in screen, command
+    assert listed | {"help", "photo"} == set(CLI_COMMANDS), listed
+    for command in about.COMMANDS:
+        assert f" {command} " in _screen().replace("\n", " "), command
 
 
 def test_it_fits_a_screen_without_scrolling():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
@@ -86,13 +87,23 @@ def test_help_lists_a_command(capsys):
     assert "filegrail explain" in capsys.readouterr().out
 
 
-def test_photo_help_exposes_the_dedicated_html_workflow(capsys):
+def test_image_help_exposes_the_digital_image_examination_workflow(capsys):
+    assert main(["help", "image"]) == 0
+
+    output = capsys.readouterr().out
+    assert "filegrail image" in output
+    assert "Digital Image Examination Report" in output
+    assert "working images and analytical outputs" in output
+    assert "--out FILE" in output
+    assert "--redact" in output
+
+
+def test_photo_remains_a_legacy_alias_for_image(capsys):
     assert main(["help", "photo"]) == 0
 
     output = capsys.readouterr().out
     assert "filegrail photo" in output
-    assert "--out FILE" in output
-    assert "--redact" in output
+    assert "Legacy alias" in output
 
 
 def test_photo_writes_a_self_contained_report_atomically(tmp_path: Path, capsys, monkeypatch):
@@ -109,12 +120,32 @@ def test_photo_writes_a_self_contained_report_atomically(tmp_path: Path, capsys,
     assert capsys.readouterr().out == ""
     page = report.read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>")
-    assert "<dd>2026/014</dd>" in page
+    assert "<dt>Case</dt><dd>2026/014</dd>" in page
     assert "<dd>J. Nowak</dd>" in page
     assert "camera.jpg" in page
     assert str(report.resolve()) in page
     assert "not calculated" not in page
     assert not list(tmp_path.glob(".photo-report.html.*.tmp"))
+
+
+def test_photo_always_records_sha256_including_embedded_reports(
+    tmp_path: Path, capsys, monkeypatch
+):
+    """Pixel transport changes report size, never the evidence identity recorded."""
+    from tests.photo import jpeg_with_exif
+
+    photo = tmp_path / "camera.jpg"
+    report = tmp_path / "embedded.html"
+    jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+    digest = hashlib.sha256(photo.read_bytes()).hexdigest()
+
+    assert main(["photo", str(photo), "--out", str(report), "--embed"]) == 0
+
+    capsys.readouterr()
+    page = report.read_text(encoding="utf-8")
+    assert digest in page
+    assert "not calculated" not in page
 
 
 def test_photo_directory_honours_recursion(tmp_path: Path, capsys, monkeypatch):
@@ -135,6 +166,30 @@ def test_photo_directory_honours_recursion(tmp_path: Path, capsys, monkeypatch):
     capsys.readouterr()
     assert recursive.read_text(encoding="utf-8").count('<article class="frame"') == 2
     assert shallow.read_text(encoding="utf-8").count('<article class="frame"') == 1
+
+
+def test_photo_rerun_does_not_ingest_its_report_assets(tmp_path: Path, capsys, monkeypatch):
+    """A generated image beside the report must not become new evidence on rerun."""
+    from tests.photo import jpeg_with_exif
+
+    root = tmp_path / "case"
+    root.mkdir()
+    source = root / "one.jpg"
+    report = root / "report.html"
+    jpeg_with_exif(source, "NIKON", "D750", "2026:09:20 10:30:00")
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+
+    assert main(["photo", str(root), "--out", str(report)]) == 0
+    assets = root / "report.files"
+    assets.mkdir(exist_ok=True)
+    (assets / "001-analytical-output.jpg").write_bytes(source.read_bytes())
+
+    assert main(["photo", str(root), "--out", str(report)]) == 0
+
+    capsys.readouterr()
+    page = report.read_text(encoding="utf-8")
+    assert page.count('<article class="frame"') == 1
+    assert "001-analytical-output.jpg" not in page
 
 
 def test_photo_refuses_no_images_and_an_unsupported_single_file(tmp_path: Path, capsys):
@@ -175,6 +230,37 @@ def test_photo_redaction_omits_the_embedded_thumbnail(tmp_path: Path, capsys, mo
     # The brand mark is drawn geometry; an encoded payload is what must be gone.
     assert ";base64," not in page
     assert "not evaluated" in page
+
+
+def test_photo_rerender_replaces_assets_and_redaction_removes_old_pixels(tmp_path: Path, capsys):
+    """A fresh or redacted report cannot inherit sidecars from an older run."""
+    from filegrail.photopixels import available
+
+    if not available():
+        pytest.skip("photo extra is not installed")
+    from PIL import Image
+
+    root = tmp_path / "case"
+    root.mkdir()
+    Image.new("RGB", (80, 60), (70, 110, 90)).save(root / "one.jpg", quality=90)
+    report = root / "report.html"
+    assets = root / "report.files"
+
+    assert main(["photo", str(root), "--out", str(report)]) == 0
+    assert (assets / "001-main-preview.jpg").is_file()
+    stale = assets / "stale-from-previous-run.jpg"
+    stale.write_bytes(b"old pixels")
+
+    assert main(["photo", str(root), "--out", str(report)]) == 0
+    assert not stale.exists()
+    assert (assets / "001-main-preview.jpg").is_file()
+
+    assert main(["photo", str(root), "--out", str(report), "--redact"]) == 0
+
+    capsys.readouterr()
+    assert not assets.exists()
+    assert ";base64," not in report.read_text(encoding="utf-8")
+    assert not list(root.glob(".report.files.*"))
 
 
 def test_help_refuses_an_unknown_command(capsys):
