@@ -22,3 +22,37 @@ ICONS = """<svg hidden aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
 <symbol id="i-expand" viewBox="0 0 16 16"><path d="M1 6V2.5A1.5 1.5 0 0 1 2.5 1H6v1.5H2.5V6H1Zm9-5h3.5A1.5 1.5 0 0 1 15 2.5V6h-1.5V2.5H10V1ZM1 10h1.5v3.5H6V15H2.5A1.5 1.5 0 0 1 1 13.5V10Zm12.5 0H15v3.5a1.5 1.5 0 0 1-1.5 1.5H10v-1.5h3.5V10Z"/></symbol>
 <symbol id="i-collapse" viewBox="0 0 16 16"><path d="M6 1v3.5A1.5 1.5 0 0 1 4.5 6H1V4.5h3.5V1H6Zm4 0h1.5v3.5H15V6h-3.5A1.5 1.5 0 0 1 10 4.5V1ZM1 10h3.5A1.5 1.5 0 0 1 6 11.5V15H4.5v-3.5H1V10Zm9 1.5a1.5 1.5 0 0 1 1.5-1.5H15v1.5h-3.5V15H10v-3.5Z"/></symbol>
 </svg>"""
+
+
+#: The mark, drawn in the page as an outline holding a wash of its own colour - the
+#: cup reads as a vessel rather than a blot. It does not follow the accent: the accent is
+#: free to change, while the mark stays the brand green the packaged assets show.
+#: The viewBox is padded by 26 units on every side so the stroke is not clipped.
+MARK_PATH = (
+    "M24,48 A48,48 0 0 1 72,0 H108 V24 "
+    "H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 "
+    "H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z"
+)
+MARK = (
+    '<svg class="mark" viewBox="-26 -26 196 256" aria-hidden="true">'
+    '<path fill="var(--brand-soft)" stroke="var(--brand)" stroke-width="1.5" '
+    f'vector-effect="non-scaling-stroke" fill-rule="evenodd" d="{MARK_PATH}"/></svg>'
+)
+
+#: The same mark at nav size, solid: an outline a pixel wide is a smudge at 16 px.
+MARK_SMALL = (
+    '<svg class="mark" viewBox="0 0 144 204" aria-hidden="true">'
+    f'<path fill="var(--brand)" fill-rule="evenodd" d="{MARK_PATH}"/></svg>'
+)
+
+#: The same mark as the tab icon. A data URI: drawn by the browser, fetched from nowhere.
+#: A tab strip is light on one machine and dark on the next and the icon cannot ask which,
+#: so it takes the mid verdigris rather than either end of the brand pair.
+FAVICON = (
+    '<link rel="icon" href="data:image/svg+xml,'
+    "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 144 204'%3E"
+    "%3Cpath fill='%233E7F6E' fill-rule='evenodd' d='M24,48 A48,48 0 0 1 72,0 H108 V24 "
+    "H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 "
+    "H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z'/%3E"
+    '%3C/svg%3E">'
+)

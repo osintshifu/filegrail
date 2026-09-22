@@ -35,7 +35,7 @@ from .analysis import NOTHING, REVIEW, Case, CaseFile, Conflict, Finding, Pivots
 from .casereport import _ABSENT, _LISTED, _PER_FILE, _capital, _facts, _type_name
 from .graph import Graph, Node, Relationship, build_graph, identifier_node_id
 from .graphlayout import HEIGHT, WIDTH, Picture, picture
-from .htmlicons import ICONS
+from .htmlicons import FAVICON, ICONS, MARK, MARK_SMALL
 from .htmlscript import SCRIPT
 from .htmlstyle import STYLE
 from .identify import PLACE, Identifier
@@ -73,38 +73,6 @@ POLICY = (
     "img-src data:; base-uri 'none'; form-action 'none'"
 )
 
-#: The mark, drawn in the page as an outline holding a wash of its own colour - the
-#: cup reads as a vessel rather than a blot. It does not follow the accent: the accent is
-#: free to change, while the mark stays the brand green the packaged assets show.
-#: The viewBox is padded by 26 units on every side so the stroke is not clipped.
-_MARK_PATH = (
-    "M24,48 A48,48 0 0 1 72,0 H108 V24 "
-    "H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 "
-    "H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z"
-)
-_MARK = (
-    '<svg class="mark" viewBox="-26 -26 196 256" aria-hidden="true">'
-    '<path fill="var(--brand-soft)" stroke="var(--brand)" stroke-width="1.5" '
-    f'vector-effect="non-scaling-stroke" fill-rule="evenodd" d="{_MARK_PATH}"/></svg>'
-)
-
-#: The same mark at nav size, solid: an outline a pixel wide is a smudge at 16 px.
-_MARK_SMALL = (
-    '<svg class="mark" viewBox="0 0 144 204" aria-hidden="true">'
-    f'<path fill="var(--brand)" fill-rule="evenodd" d="{_MARK_PATH}"/></svg>'
-)
-
-#: The same mark as the tab icon. A data URI: drawn by the browser, fetched from nowhere.
-#: A tab strip is light on one machine and dark on the next and the icon cannot ask which,
-#: so it takes the mid verdigris rather than either end of the brand pair.
-_FAVICON = (
-    '<link rel="icon" href="data:image/svg+xml,'
-    "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 144 204'%3E"
-    "%3Cpath fill='%233E7F6E' fill-rule='evenodd' d='M24,48 A48,48 0 0 1 72,0 H108 V24 "
-    "H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 "
-    "H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z'/%3E"
-    '%3C/svg%3E">'
-)
 
 #: Files a pivot names before the rest go behind a summary: enough to see the
 #: shape of the group, few enough to keep the row a row.
@@ -225,7 +193,7 @@ def render_html(
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         '<meta name="color-scheme" content="dark light">',
         f"<title>filegrail · {_e(Path(case.root).name or str(case.root))}</title>",
-        _FAVICON,
+        FAVICON,
         f"<style>{STYLE}</style>",
         "</head>",
         "<body>",
@@ -235,7 +203,7 @@ def render_html(
         '<header class="mast" id="top">',
         f'<h1 class="word">filegrail <small>v{_e(__version__)} · investigation report</small></h1>',
         '<div class="mast-body">',
-        f'<div class="mast-mark">{_MARK}</div>',
+        f'<div class="mast-mark">{MARK}</div>',
         _fields(facts, css="facts", copy=frozenset({"target", "profile", "report"})),
         "</div>",
         "</header>",
@@ -248,7 +216,7 @@ def render_html(
     )
     upwards = (
         '<a class="home" href="#top" title="Back to the top" '
-        f'aria-label="Back to the top">{_MARK_SMALL}</a>'
+        f'aria-label="Back to the top">{MARK_SMALL}</a>'
     )
     nav = [
         f'<nav class="nav">{upwards}{links}<span class="sp"></span>',
