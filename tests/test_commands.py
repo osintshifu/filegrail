@@ -56,7 +56,7 @@ def test_graph_exports_are_separate_outputs(tmp_path: Path, capsys):
     assert main([str(tmp_path), "--graphml", "--content"]) == 0
     assert capsys.readouterr().out.startswith("<?xml")
     assert main([str(tmp_path), "--graph-csv", "--content"]) == 0
-    assert capsys.readouterr().out.startswith("source_id,source_type")
+    assert capsys.readouterr().out.startswith("source,source_type")
     assert main([str(tmp_path), "--graphml", "--json"]) == 2
 
 

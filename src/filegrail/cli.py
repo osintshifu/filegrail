@@ -623,14 +623,23 @@ def _scan(rest: list[str]) -> int:
         )
     elif args.graphml or args.graph_csv:
         from .graph import build_graph
-        from .graph_export import render_graph_csv, render_graphml
+        from .graph_export import render_graph_csv, render_graph_meta, render_graphml
 
         graph = build_graph(records, extract(records, content=content, metadata=metadata))
-        report = (
-            render_graphml(graph, run=run, coverage=coverage_document)
-            if args.graphml
-            else render_graph_csv(graph, run=run, coverage=coverage_document)
-        )
+        if args.graphml:
+            report = render_graphml(graph, run=run, coverage=coverage_document)
+        else:
+            report = render_graph_csv(graph)
+            # An edge list has no row the scan itself belongs in, so what the
+            # scan was goes in a file of its own beside it. Without a file to
+            # write beside, `--json` is where to read it.
+            if written is not None:
+                beside = written.with_name(written.name + ".meta.json")
+                try:
+                    beside.write_text(render_graph_meta(run, coverage_document), encoding="utf-8")
+                except OSError as error:
+                    print(f"filegrail: cannot write {beside}: {error}", file=sys.stderr)
+                    return 2
     elif args.html:
         case, found = _case(records, base, home, content=content, metadata=metadata, listed=listed)
         report = render_html(

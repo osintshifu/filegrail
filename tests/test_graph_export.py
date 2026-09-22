@@ -66,11 +66,24 @@ def test_csv_has_one_relationship_per_row_with_endpoint_data():
     rows = list(csv.DictReader(io.StringIO(render_graph_csv(_graph()))))
 
     assert len(rows) == 1
-    assert rows[0]["source_id"] == "file:/case/My Report.pdf"
+    assert rows[0]["source"] == "file:/case/My Report.pdf"
     assert rows[0]["source_type"] == "file"
-    assert rows[0]["target_id"] == "email:anna@example.org"
+    assert rows[0]["source_label"] == "My Report.pdf"
+    assert rows[0]["target"] == "email:anna@example.org"
     assert rows[0]["kind"] == "has identifier"
+    assert rows[0]["label"] == "HAS_IDENTIFIER"
     assert json.loads(rows[0]["evidence"])[0]["category"] == "metadata"
+
+
+def test_csv_gives_the_evidence_columns_a_tool_can_filter_on():
+    """The whole record stays in `evidence`, but a graph tool cannot filter on
+    a JSON string. Almost every edge rests on one ground, so these columns are
+    that ground; where there are several they name all of them."""
+    rows = list(csv.DictReader(io.StringIO(render_graph_csv(_graph()))))
+
+    assert rows[0]["evidence_count"] == "1"
+    assert rows[0]["evidence_source"] == "document-metadata"
+    assert rows[0]["evidence_category"] == "metadata"
 
 
 def test_graphml_carries_run_and_coverage_metadata():
@@ -86,11 +99,17 @@ def test_graphml_carries_run_and_coverage_metadata():
     assert json.loads(data["graph_coverage"] or "{}") == coverage
 
 
-def test_csv_repeats_run_and_coverage_on_each_relationship():
+def test_the_scan_is_not_a_property_of_every_relationship():
+    """Repeating what the scan was in every row made it 70% of the file: a
+    column identical on each edge, which no tool can filter and every tool has
+    to carry. It goes in the file written beside the table."""
+    from filegrail.graph_export import render_graph_meta
+
     run = {"content": False, "hash": True}
     coverage = {"files": {"discovered": 2, "scanned": 2}}
 
     rows = list(csv.DictReader(io.StringIO(render_graph_csv(_graph(), run=run, coverage=coverage))))
 
-    assert json.loads(rows[0]["run"]) == run
-    assert json.loads(rows[0]["coverage"]) == coverage
+    assert "run" not in rows[0]
+    assert "coverage" not in rows[0]
+    assert json.loads(render_graph_meta(run, coverage)) == {"run": run, "coverage": coverage}

@@ -7,7 +7,7 @@ import io
 import json
 import re
 import xml.etree.ElementTree as ElementTree
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import PurePosixPath, PureWindowsPath
 
 from .graph import Graph, Node
@@ -109,48 +109,100 @@ def render_graph_csv(
     run: Mapping[str, object] | None = None,
     coverage: Mapping[str, object] | None = None,
 ) -> str:
-    """Serialize one relationship per CSV row, including both endpoint nodes."""
+    """Serialize one relationship per row, with both endpoints and its evidence.
+
+    An edge list is a table of relationships, so every column has to be a
+    property of the relationship in that row. `run` and `coverage` describe the
+    scan, not any one edge, and repeating them made them 70% of the file - a
+    column identical in every row, which no tool can filter on and every tool
+    has to carry. They are written beside the table instead; `--json` has them
+    in full. `run` and `coverage` are still accepted so a caller need not know
+    which of the two writers it is calling.
+
+    The evidence is given twice on purpose. The flat columns are what a graph
+    tool can filter and sort on, and they are exact for the one-evidence edge
+    that almost every edge is; `evidence` keeps the whole record, because only
+    there does each ground stay joined to its own place, count and time.
+    """
+    del run, coverage
     nodes = {node.id: node for node in graph.nodes}
     output = io.StringIO(newline="")
+    # `source` and `target` are what an importer looks for to find the two ends,
+    # and `kind` is what it uses to tell two relationships between one pair
+    # apart. Those three names are not free choices.
     fields = (
-        "source_id",
+        "source",
         "source_type",
-        "source_value",
-        "target_id",
+        "source_label",
+        "target",
         "target_type",
-        "target_value",
+        "target_label",
         "kind",
-        "count",
+        "label",
+        "weight",
+        "evidence_count",
+        "evidence_source",
+        "evidence_place",
+        "evidence_category",
+        "evidence_match",
+        "evidence_at",
         "evidence",
-        "run",
-        "coverage",
     )
     writer = csv.DictWriter(output, fieldnames=fields, lineterminator="\n")
     writer.writeheader()
     for relationship in graph.relationships:
         source = nodes[relationship.source]
         target = nodes[relationship.target]
+        found = relationship.evidence
         writer.writerow(
             {
-                "source_id": source.id,
+                "source": source.id,
                 "source_type": source.type,
-                "source_value": source.value,
-                "target_id": target.id,
+                "source_label": _label(source),
+                "target": target.id,
                 "target_type": target.type,
-                "target_value": target.value,
+                "target_label": _label(target),
                 "kind": relationship.kind,
-                "count": relationship.count,
+                "label": _edge_label(relationship.kind),
+                "weight": relationship.count,
+                "evidence_count": len(found),
+                "evidence_source": _joined(item.source for item in found),
+                "evidence_place": _joined(item.place for item in found),
+                "evidence_category": _joined(item.category or "" for item in found),
+                "evidence_match": _joined(item.match or "" for item in found),
+                "evidence_at": min((item.at for item in found if item.at), default=""),
                 "evidence": json.dumps(
-                    [item.to_dict() for item in relationship.evidence],
+                    [item.to_dict() for item in found],
                     ensure_ascii=False,
                     separators=(",", ":"),
                     sort_keys=True,
                 ),
-                "run": _json(run) if run is not None else "",
-                "coverage": _json(coverage) if coverage is not None else "",
             }
         )
     return output.getvalue()
+
+
+def render_graph_meta(
+    run: Mapping[str, object] | None = None,
+    coverage: Mapping[str, object] | None = None,
+) -> str:
+    """What the scan was, for the file written beside an edge list."""
+    document: dict[str, object] = {}
+    if run is not None:
+        document["run"] = run
+    if coverage is not None:
+        document["coverage"] = coverage
+    return json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _joined(values: Iterable[str]) -> str:
+    """The distinct values of one evidence field, in the order they were found.
+
+    Almost every edge rests on one ground and this is then that ground. Where
+    there are several the column says all of them, because a column that showed
+    only the first would read as a complete answer.
+    """
+    return " | ".join(dict.fromkeys(value for value in values if value))
 
 
 #: What XML 1.0 allows a document to hold: tab, newline, carriage return and

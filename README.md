@@ -1,6 +1,6 @@
 <div align="center">
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.44.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
+[![PyPI](https://img.shields.io/badge/pypi-v0.45.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square) ![93 formats](https://img.shields.io/badge/formats-93-8250DF?style=flat-square) ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square) ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square) [![CI](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml/badge.svg)](https://github.com/osintshifu/filegrail/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-Apache--2.0-BC4C00?style=flat-square)
 
 </div>
 
@@ -897,7 +897,11 @@ Each node carries a readable label and its type, and each relationship carries i
 filegrail ./case --graph-csv -o relationships.csv
 ```
 
-Writes one evidence-backed relationship per row, for spreadsheets, Neo4j `LOAD CSV`, Cytoscape and transformation into other link-analysis formats.
+Writes one relationship per row: both endpoints with their type and label, the kind of relationship, its occurrence count as a weight, and the evidence behind it. The evidence is given both as columns a tool can filter on and in full, so each ground keeps its own place, count and time.
+
+What the scan itself was goes in `relationships.csv.meta.json` beside the table, because it belongs to the run and not to any one relationship. `--json` carries the same values.
+
+For spreadsheets, Neo4j `LOAD CSV`, Gephi, Maltego and transformation into other link-analysis formats.
 
 FileGrail performs no network enrichment. External enrichment remains downstream of the evidence collection step.
 
