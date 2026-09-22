@@ -53,6 +53,13 @@ photo = ["Pillow>=10,<13", "numpy>=1.24,<3"]
 # red run is a finding rather than a rerun.
 fuzz = ["hypothesis>=6,<7"]
 
+# Also kept out of `dev`, for a different reason. `case-utils` is the official
+# CASE validator and it brings rdflib, pySHACL and pandas with it - around
+# 200 MB to check one output format. It is the only thing that can say whether
+# what `--case-jsonld` writes is really CASE, so it runs in a job of its own,
+# and never at runtime.
+case = ["case-utils>=0.18,<1"]
+
 [project.urls]
 Homepage = "https://github.com/osintshifu/filegrail"
 Repository = "https://github.com/osintshifu/filegrail"
