@@ -1,6 +1,7 @@
 """The dedicated photo report is offline, explicit and safe for untrusted metadata."""
 
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -185,6 +186,7 @@ def test_the_report_names_its_sections_the_way_the_investigation_report_does():
 
     for heading in (
         "<h2>Case summary</h2>",
+        "<h2>Key findings</h2>",
         "<h2>Metadata</h2>",
         "<h2>Geolocation</h2>",
         '<h2>Images <span class="n">',
@@ -220,6 +222,26 @@ def test_the_report_names_its_sections_the_way_the_investigation_report_does():
         "bench",
     ):
         assert invented not in page
+
+
+def test_findings_are_numbered_once_across_the_collection_and_listed_in_the_summary():
+    """A finding a reader cannot cite is one they have to describe instead.
+
+    The investigation report numbers what it finds, F01 upward, so a note can
+    say which one it means. Here the numbers run across every image in order,
+    only a flagged row takes one - an ordinary fact is an observation, not a
+    finding - and the summary lists them all, each a link to the row it names.
+    """
+    single = _collection()
+    first = single.photos[0]
+    second = replace(first, number=2, path="/case/second.jpg", name="second.jpg")
+    page = render_photo_html(replace(single, photos=(first, second)), now=NOW)
+
+    assert "<h2>Key findings</h2>" in page
+    for anchor in ("photo-001-F01", "photo-001-F02", "photo-002-F03", "photo-002-F04"):
+        assert f'id="{anchor}"' in page
+        assert f'href="#{anchor}"' in page
+    assert not re.search(r"\bF0[5-9]\b", page)
 
 
 def test_redacted_and_empty_reports_state_what_was_not_evaluated():

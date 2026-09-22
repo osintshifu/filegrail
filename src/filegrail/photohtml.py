@@ -460,6 +460,10 @@ text-overflow:ellipsis;white-space:nowrap;max-width:34ch}
 .frame+.frame{border-top:1px solid var(--line);padding-top:26px}
 .js .frame+.frame{border-top:0;padding-top:0}
 .js .frame:not([data-current]){display:none}
+/* a panel or a finding reached by its address: clear of the two sticky bars,
+   and the row marked so the eye finds what the link named */
+.frame [id]{scroll-margin-top:calc(var(--nav) + 64px)}
+tr:target td{box-shadow:inset 0 1px 0 var(--accent),inset 0 -1px 0 var(--accent)}
 .frame-head{display:flex;align-items:baseline;gap:12px;margin:0 0 12px;flex-wrap:wrap}
 .frame-no{font:400 var(--t-small)/1.5 var(--mono);color:var(--accent)}
 .frame-head h3{margin:0;font:500 var(--t-lead)/1.3 var(--sans);letter-spacing:0;
@@ -917,16 +921,39 @@ SCRIPT = r"""
   });
   // A link into an image, from the rail or from the address bar, has to open
   // that image rather than scroll to something that is not on screen.
+  // A panel or a finding inside it is scrolled to itself rather than to the
+  // top of its image, or a link to F03 lands a screen above the row it names.
   function fromHash(){
     var id=(location.hash||"").slice(1);
     if(!id){return false}
     for(var index=0;index<frames.length;index++){
-      if(frames[index].id===id||id.indexOf(frames[index].id+"-")===0){show(index,true);return true}
+      if(frames[index].id===id||id.indexOf(frames[index].id+"-")===0){
+        var inner=id!==frames[index].id?document.getElementById(id):null;
+        openView("images");
+        show(index,!inner);
+        if(inner){
+          // Straight there: the view has just changed under the reader, so no
+          // scroll position is worth animating away from, and a page still
+          // laying itself out would leave a smooth scroll short of the row.
+          var root=document.documentElement.style;
+          root.scrollBehavior="auto";
+          inner.scrollIntoView({block:"start"});
+          root.scrollBehavior="";
+        }
+        return true;
+      }
     }
     return false;
   }
-  if(frames.length){if(!fromHash()){show(0,false)}}
+  if(frames.length){show(0,false)}
   window.addEventListener("hashchange",fromHash);
+  // A link to what is already in the address bar changes nothing the browser
+  // reports, so a reader going back to a finding they have read would click
+  // and see nothing happen.
+  document.addEventListener("click",function(event){
+    var link=event.target.closest?event.target.closest('a[href^="#photo-"]'):null;
+    if(link&&location.hash===link.getAttribute("href")){event.preventDefault();fromHash()}
+  });
 
   // What the stage is doing to the picture, said in the strip under it.
   all(".image-stage").forEach(function(stage){
@@ -956,22 +983,25 @@ SCRIPT = r"""
   // at a time, and those are different things to read. Without a script both are
   // on the page one after the other, which is what print goes back to.
   var views=all(".view"),navLinks=all("[data-goto]");
-  function openView(name){
+  // One link is current, not every link into the view: four sections share the
+  // summary, and a screen reader told all four are current is told nothing.
+  function openView(name,chosen){
     views.forEach(function(view){view.classList.toggle("on",view.getAttribute("data-view")===name)});
-    navLinks.forEach(function(link){
-      link.setAttribute("aria-current",String(link.getAttribute("data-goto")===name));
-    });
+    var current=chosen||navLinks.filter(function(link){return link.getAttribute("data-goto")===name})[0];
+    navLinks.forEach(function(link){link.setAttribute("aria-current",String(link===current))});
   }
   navLinks.forEach(function(link){
     link.addEventListener("click",function(event){
       var name=link.getAttribute("data-goto"),to=link.getAttribute("href").slice(1);
       event.preventDefault();
-      openView(name);
+      openView(name,link);
       var target=to?document.getElementById(to):null;
       if(target){target.scrollIntoView({block:"start"})}else{window.scrollTo({top:0})}
     });
   });
-  openView("summary");
+  // A link into an image, from a note or a bookmark, opens on that image. The
+  // summary is where a reader starts only when the address asked for nothing.
+  if(!fromHash()){openView("summary")}
 
   // One axis of a cluster, one scale of geolocation. Without a script every
   // one of them is on the page; this only decides which is in front.
@@ -1158,14 +1188,20 @@ def render_photo_html(
     from . import photomap
 
     fixes = _fixes(collection)
+    refs = _refs(collection)
     # Everything that speaks for the whole collection is one view; the
     # images are the other. Neither is a section of the other.
     collected = (
         _summary(collection, rows)
+        + _key_findings(collection, refs)
         + _section("metadata", "Metadata", str(len(rows)), _metadata_table(rows))
         + (_geolocation(fixes) if fixes else "")
     )
-    places = [("summary", "summary", "Case summary"), ("metadata", "summary", "Metadata")]
+    places = [
+        ("summary", "summary", "Case summary"),
+        ("findings", "summary", "Findings"),
+        ("metadata", "summary", "Metadata"),
+    ]
     if fixes:
         places.append(("geolocation", "summary", "Geolocation"))
     places.append(("", "images", "Images"))
@@ -1193,7 +1229,7 @@ def render_photo_html(
     main = (
         f'<div class="view on" data-view="summary">{collected}</div>'
         f'<div class="view" data-view="images">'
-        f'<section class="bare" id="images">{_workspace(collection, written)}</section>'
+        f'<section class="bare" id="images">{_workspace(collection, written, refs)}</section>'
         "</div>"
     )
     top = (
@@ -1406,6 +1442,38 @@ def _summary(collection: PhotoCollection, rows: list[tuple[str, str, str, str, s
         '<span class="small">what the collection is, before any one image</span></div>'
         f"{_stats(collection, rows)}"
         f'<div class="summary-grid">{panels}</div></section>'
+    )
+
+
+def _key_findings(collection: PhotoCollection, refs: dict[tuple[int, int], str]) -> str:
+    """Every numbered finding in the collection, each a link to the row it names."""
+    by_number = {photo.number: photo for photo in collection.photos}
+    rows = "".join(
+        f"<tr{_flag(fact.state)}>"
+        f'<td class="m"><a href="#photo-{number:03d}-{ref}">{ref}</a></td>'
+        f'<td><span class="m">#{number:03d}</span> {_e(photo.name)}</td>'
+        f'<td class="k">{_e(fact.state)}</td>'
+        f"<td><b>{_e(fact.label)}</b> {_e(fact.value)}</td>"
+        f'<td class="m">{_e(fact.method)}</td></tr>'
+        for (number, index), ref in refs.items()
+        for photo in (by_number[number],)
+        for fact in (photo.facts[index],)
+    )
+    table = (
+        '<div class="body flush"><div class="scroll"><table><thead><tr>'
+        '<th style="width:56px">#</th><th style="width:240px">image</th>'
+        '<th style="width:84px">state</th><th>finding</th><th style="width:200px">method</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table></div></div>"
+        if rows
+        else '<div class="body"><p class="small">No conflicts or signals were found in these'
+        " images.</p></div>"
+    )
+    return _section(
+        "findings",
+        "Key findings",
+        str(len(refs)),
+        f'<div class="panel"><div class="reading">{_e(_NOTES["findings"])}</div>{table}'
+        f'<div class="caution"><b>Limitations</b>{_e(_CAUTIONS["findings"])}</div></div>',
     )
 
 
@@ -1793,7 +1861,9 @@ def _moment(photo: PhotoResult) -> float | None:
     return year + ((month - 1) * 31 + day - 1) / 372
 
 
-def _workspace(collection: PhotoCollection, written: _Assets | None) -> str:
+def _workspace(
+    collection: PhotoCollection, written: _Assets | None, refs: dict[tuple[int, int], str]
+) -> str:
     """The image view: what a reader does to it, and the images laid out in it."""
     if not collection.photos:
         return '<p class="empty">No supported images were included in this report.</p>'
@@ -1813,11 +1883,15 @@ def _workspace(collection: PhotoCollection, written: _Assets | None) -> str:
         '<button class="btn" type="button" data-cols="2" aria-pressed="true">tile</button>'
         "</div>"
     )
-    frames = "".join(_frame(photo, collection.redacted, written) for photo in collection.photos)
+    frames = "".join(
+        _frame(photo, collection.redacted, written, refs) for photo in collection.photos
+    )
     return deck + frames
 
 
-def _frame(photo: PhotoResult, redacted: bool, written: _Assets | None) -> str:
+def _frame(
+    photo: PhotoResult, redacted: bool, written: _Assets | None, refs: dict[tuple[int, int], str]
+) -> str:
     """One image, and every analysis that had something to say about it."""
     layers = _layers(photo, redacted)
     frame_id = f"photo-{photo.number:03d}"
@@ -1833,7 +1907,7 @@ def _frame(photo: PhotoResult, redacted: bool, written: _Assets | None) -> str:
     panels = [
         _stage_panel(photo, layers, redacted, written, frame_id),
         _fileinfo_panel(photo, frame_id),
-        _findings_panel(photo, frame_id),
+        _findings_panel(photo, frame_id, refs),
     ]
     if photo.evidence:
         panels.append(_blocks_panel(photo, frame_id))
@@ -2221,25 +2295,43 @@ def _flag(state: str) -> str:
 _EXACT = frozenset({"SHA-256", "modified", "captured", "location", "body serial"})
 
 
-def _findings_panel(photo: PhotoResult, frame_id: str) -> str:
+def _refs(collection: PhotoCollection) -> dict[tuple[int, int], str]:
+    """A number for every flagged row, running across the images in order.
+
+    Numbered the way the investigation report numbers its findings, so a note
+    can cite one. An ordinary fact is an observation and takes no number.
+    """
+    refs: dict[tuple[int, int], str] = {}
+    for photo in collection.photos:
+        for index, fact in enumerate(photo.facts):
+            if fact.state in ("conflict", "signal"):
+                refs[(photo.number, index)] = f"F{len(refs) + 1:02d}"
+    return refs
+
+
+def _findings_panel(photo: PhotoResult, frame_id: str, refs: dict[tuple[int, int], str]) -> str:
     conflicts = sum(1 for fact in photo.facts if fact.state == "conflict")
     signals = sum(1 for fact in photo.facts if fact.state == "signal")
     if not photo.facts:
         body = '<p class="small">Nothing structural disagreed on this file.</p>'
     else:
-        body = (
-            "<table><thead><tr><th>state</th><th>finding</th><th>method</th></tr></thead><tbody>"
-            + "".join(
-                # Only a flagged row is coloured. An ordinary finding is a fact,
-                # and a table where every row is painted says nothing by painting
-                # one.
-                f'<tr{_flag(fact.state)}><td class="k">{_e(fact.state)}</td>'
+        rows = []
+        for index, fact in enumerate(photo.facts):
+            ref = refs.get((photo.number, index), "")
+            anchor = f' id="{frame_id}-{ref}"' if ref else ""
+            # Only a flagged row is coloured and numbered. An ordinary finding
+            # is a fact, and a table where every row is painted says nothing by
+            # painting one.
+            rows.append(
+                f"<tr{_flag(fact.state)}{anchor}>"
+                f'<td class="m">{ref}</td><td class="k">{_e(fact.state)}</td>'
                 f"<td><b>{_e(fact.label)}</b> {_e(fact.value)}"
                 f"{f' {_e(fact.detail)}' if fact.detail else ''}</td>"
                 f'<td class="m">{_e(fact.method)}</td></tr>'
-                for fact in photo.facts
             )
-            + "</tbody></table>"
+        body = (
+            "<table><thead><tr><th>#</th><th>state</th><th>finding</th><th>method</th>"
+            f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
         )
     named = (
         " \u00b7 ".join(
