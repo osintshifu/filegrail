@@ -1,9 +1,10 @@
 """JPEG structure facts that do not require decoding image pixels."""
 
+import io
 import struct
 from pathlib import Path
 
-from filegrail.photojpeg import analyse_jpeg, jpeg_size
+from filegrail.photojpeg import _entropy_marker, analyse_jpeg, jpeg_size
 
 
 def _segment(marker: int, payload: bytes) -> bytes:
@@ -138,3 +139,56 @@ def test_rejects_truncated_or_invalid_segments(tmp_path: Path):
 
     assert analyse_jpeg(truncated) is None
     assert analyse_jpeg(invalid_table) is None
+
+
+class _Exhausting(io.BytesIO):
+    """A file that will not be read from for ever.
+
+    The scan reads on until it has a byte to decide on, and a file whose last
+    bytes could still begin a marker never gives it one. Counting the reads
+    turns that into a failure this suite can report, rather than a run that
+    never ends: there is no portable timeout to lean on here.
+    """
+
+    def __init__(self, data: bytes, limit: int = 64) -> None:
+        super().__init__(data)
+        self.reads = 0
+        self.limit = limit
+
+    def read(self, size: int | None = -1) -> bytes:
+        self.reads += 1
+        if self.reads > self.limit:
+            raise AssertionError("the entropy scan read past the end of the file")
+        return super().read(size if size is not None else -1)
+
+
+def test_an_entropy_scan_ending_in_padding_bytes_stops_at_the_end_of_the_file():
+    """A run of 0xFF at the end of a file is padding before a marker that is not there.
+
+    Padding is kept in hand because the marker it introduces may straddle the
+    block boundary. When the file ends instead, there is nothing to complete it
+    with, and the scan has to end on the read returning nothing rather than on
+    what is still held.
+    """
+    markers: list = []
+
+    assert _entropy_marker(_Exhausting(b"scan data\xff\xff"), markers) == (None, 0)
+    assert _entropy_marker(_Exhausting(b"scan data\xff"), markers) == (None, 0)
+    assert markers == []
+
+
+def test_a_scan_claiming_more_restarts_than_a_file_may_hold_is_refused():
+    """The marker budget is a file's, so it has to bind inside a single scan.
+
+    Counted on the way out it bounds nothing: a scan declaring millions of
+    restart markers is read into memory in full before anything checks.
+    """
+    from filegrail.photojpeg import _MAX_SEGMENTS
+
+    markers: list = []
+
+    found, restarts = _entropy_marker(io.BytesIO(b"\xff\xd0" * (_MAX_SEGMENTS * 2)), markers)
+
+    assert found is None
+    assert len(markers) == _MAX_SEGMENTS
+    assert restarts == _MAX_SEGMENTS

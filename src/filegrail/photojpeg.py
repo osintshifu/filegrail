@@ -250,17 +250,30 @@ def _entropy_marker(
             # Whatever might still be part of a marker is kept and read on from.
             keep = len(block) if first < 0 else first
             base += keep
-            block = block[keep:] + handle.read(_ENTROPY_BLOCK)
-            at = 0
-            if len(block) < 2:
+            block = block[keep:]
+            more = handle.read(_ENTROPY_BLOCK)
+            if not more:
+                # The file ends inside what could have been a marker, so there is
+                # no byte left to decide on and the scan has no end. Returning on
+                # the read rather than on what is held is what ends the walk: a
+                # file whose last bytes are 0xFF keeps two of them in hand for
+                # ever, and testing the buffer alone never terminates.
                 handle.seek(base + len(block))
                 return None, restarts
+            block += more
+            at = 0
             continue
         code = block[last + 1]
         if code == 0x00:
             at = last + 2
             continue
         if 0xD0 <= code <= 0xD7:
+            if len(markers) >= _MAX_SEGMENTS:
+                # The file's whole marker budget is spent inside this one scan.
+                # Counted here rather than on the way out, so a file declaring
+                # millions of restarts cannot be read into memory first.
+                handle.seek(base + last + 2)
+                return None, restarts
             markers.append(JpegMarker(_marker_name(code), code, base + first, 2))
             restarts += 1
             at = last + 2
