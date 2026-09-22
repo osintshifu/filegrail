@@ -23,7 +23,7 @@
 
 <div align="center">
 
-[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Images](#digital-image-examination) · [Usage](#usage) · [Automation](#automation-and-exports)
+[Quick start](#quick-start) · [Why FileGrail](#why-filegrail) · [Evidence model](#evidence-model) · [Sources](#evidence-sources) · [Metadata](#embedded-metadata) · [Formats](#supported-formats) · [Content](#document-content) · [Pivots](#investigative-pivots) · [Analysis](#analysis-and-correlation) · [Reports](#html-investigation-reports) · [CASE](#caseuco-export) · **[Live HTML report](https://osintshifu.github.io/filegrail/example-report.html)** · [Images](#digital-image-examination) · [Usage](#usage) · [Automation](#automation-and-exports)
 
 </div>
 
@@ -903,6 +903,20 @@ What the scan itself was goes in `relationships.csv.meta.json` beside the table,
 
 For spreadsheets, Neo4j `LOAD CSV`, Gephi, Maltego and transformation into other link-analysis formats.
 
+### CASE/UCO export
+
+```bash
+filegrail ./case --case-jsonld -o case.json
+```
+
+CASE is the exchange format built on the UCO ontology that digital forensic tools use to hand results to one another. It is the only format here with a place for the two things the evidence graph is made of: a relationship is an object that carries its own evidence, and the document records which tool produced it, from what and when.
+
+A relationship supported by two independent grounds stays one relationship with two pieces of evidence, rather than being split or flattened. Where UCO has no class for something FileGrail found, the value is exported as a plain observable carrying the name FileGrail gave it, rather than being fitted into a class that would say something the tool did not find.
+
+Identifiers are the same across runs and claim no more than the evidence supports. A file with a SHA-256 is identified by its content, so two scans anywhere agree on it. A file without one is identified by where it was found, which is a claim about that target only. A filename is never an identity.
+
+The export makes no network request and needs no JSON-LD library. Output is validated against CASE 1.5.0.
+
 FileGrail performs no network enrichment. External enrichment remains downstream of the evidence collection step.
 
 ---
@@ -1059,6 +1073,7 @@ Running `filegrail` without arguments shows the command overview without startin
 | `--html` | Self-contained HTML output |
 | `--graphml` | Evidence graph as GraphML |
 | `--graph-csv` | Evidence relationships as CSV |
+| `--case-jsonld` | Evidence graph as CASE/UCO JSON-LD |
 | `-o`, `--out FILE` | Write output to a file |
 | `--no-recurse` | Disable recursive directory scanning |
 | `--no-skip` | Include normally skipped build/cache/vendor directories |
@@ -1066,7 +1081,7 @@ Running `filegrail` without arguments shows the command overview without startin
 | `--no-archives` | Leave files inside archives, documents and messages unread, and disable inherited archive-origin matching |
 | `--color`, `--no-color` | Force or disable ANSI colour |
 
-One output form at a time: `--timeline`, `--json`, `--html`, `--graphml` and `--graph-csv` exclude one another.
+One output form at a time: `--timeline`, `--json`, `--html`, `--graphml`, `--graph-csv` and `--case-jsonld` exclude one another.
 
 ### Exit codes
 

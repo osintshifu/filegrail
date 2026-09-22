@@ -17,6 +17,7 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -142,6 +143,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--graph-csv",
         action="store_true",
         help="Export one evidence-backed graph relationship per CSV row. Enables --pivots.",
+    )
+    parser.add_argument(
+        "--case-jsonld",
+        dest="case_jsonld",
+        action="store_true",
+        help="Export the evidence graph as CASE/UCO JSON-LD, keeping the evidence on each "
+        "relationship and recording which tool produced it. Enables --pivots.",
     )
     parser.add_argument(
         "-o",
@@ -519,11 +527,18 @@ def _home(args: argparse.Namespace) -> Path | None | int:
 
 def _scan(rest: list[str]) -> int:
     args = build_parser().parse_args(rest)
-    outputs = [args.json, args.html, args.graphml, args.graph_csv, args.timeline]
+    outputs = [
+        args.json,
+        args.html,
+        args.graphml,
+        args.graph_csv,
+        args.case_jsonld,
+        args.timeline,
+    ]
     if sum(outputs) > 1:
         print(
-            "filegrail: --json, --html, --graphml, --graph-csv and --timeline "
-            "are separate outputs; choose one",
+            "filegrail: --json, --html, --graphml, --graph-csv, --case-jsonld and "
+            "--timeline are separate outputs; choose one",
             file=sys.stderr,
         )
         return 2
@@ -569,7 +584,14 @@ def _scan(rest: list[str]) -> int:
     # `--content` or `--meta` without `--pivots` would pay for the search and
     # then print a count of what it found. Naming a corpus is asking to be
     # shown it. Both corpora are read unless one was asked for alone.
-    listed = args.pivots or args.content or args.meta or args.graphml or args.graph_csv
+    listed = (
+        args.pivots
+        or args.content
+        or args.meta
+        or args.graphml
+        or args.graph_csv
+        or args.case_jsonld
+    )
     content = listed and (args.content or not args.meta)
     metadata = listed and (args.meta or not args.content)
     output_format = (
@@ -579,6 +601,8 @@ def _scan(rest: list[str]) -> int:
         if args.graphml
         else "graph-csv"
         if args.graph_csv
+        else "case-jsonld"
+        if args.case_jsonld
         else "html"
         if args.html
         else "timeline"
@@ -620,6 +644,18 @@ def _scan(rest: list[str]) -> int:
             unsearched=missed,
             run=run,
             coverage=coverage_document,
+        )
+    elif args.case_jsonld:
+        from .caseexport import render_case_jsonld
+        from .graph import build_graph
+
+        graph = build_graph(records, extract(records, content=content, metadata=metadata))
+        report = render_case_jsonld(
+            graph,
+            records,
+            root=root,
+            moment=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            run=run,
         )
     elif args.graphml or args.graph_csv:
         from .graph import build_graph
@@ -688,7 +724,11 @@ def _scan(rest: list[str]) -> int:
             home=home,
             unsearched=missed,
         )
-    return _emit(report, written, exact=args.json or args.graphml or args.graph_csv or args.html)
+    return _emit(
+        report,
+        written,
+        exact=args.json or args.graphml or args.graph_csv or args.case_jsonld or args.html,
+    )
 
 
 def _image(rest: list[str]) -> int:

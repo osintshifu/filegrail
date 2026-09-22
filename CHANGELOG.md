@@ -7,6 +7,11 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
 ## 0.45.0 - 2026-09-23
 
+### Added
+
+- `--case-jsonld` exports the evidence graph as CASE/UCO JSON-LD: a relationship is an object carrying its own evidence, and the document records which tool produced it, from what and when. Validated against CASE 1.5.0, with no JSON-LD library and no network request.
+- A file in that export is identified by its SHA-256 where one was taken and by where it was found otherwise, so an identifier claims no more than the evidence supports.
+
 ### Changed
 
 - **The CSV edge list has different columns.** `source_id` and `target_id` are now `source` and `target`, `source_value` and `target_value` are now `source_label` and `target_label`, and `count` is now `weight`. A reader that names its columns keeps working; one that reads them by position does not.
