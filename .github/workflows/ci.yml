@@ -81,7 +81,12 @@ jobs:
       - name: Install
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+          # `libarchive-zip-perl` is a Recommends of exiftool, and without it
+          # exiftool cannot open a zip at all - it reads an Office package as
+          # an opaque file and reports nothing out of it. Named here because
+          # --no-install-recommends is worth keeping for a reproducible job.
+          sudo apt-get install -y --no-install-recommends \
+            libimage-exiftool-perl libarchive-zip-perl
           python -m pip install -e ".[dev]"
       # A fixture built from a specification and read by the parser it was
       # built for agrees with itself, and that is all it proves. The readers

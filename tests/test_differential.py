@@ -127,9 +127,22 @@ def test_another_implementation_finds_what_this_one_reports(corpus, specimen):
     to be searchable. A value only this project can find is the signature of a
     fixture built the way the specification reads rather than the way an
     encoder writes."""
-    assert _readable(corpus, specimen) is not None, (
-        f"{specimen.route}: no extension of this route gave exiftool "
-        f"{sorted(specimen.expect.values())}"
+    into, said = corpus
+    if _readable(corpus, specimen) is not None:
+        return
+
+    # What the other tool did say, because without it this failure costs a
+    # round trip through CI to find out whether the specimen is malformed or
+    # the reference tool is missing a library. It was the second one once
+    # already: exiftool without `Archive::Zip` reads an Office package as an
+    # opaque file and reports nothing, which looks exactly like a bad fixture.
+    saw = {
+        suffix: sorted(str(key) for key in (said.get(str(into / _named(specimen, suffix))) or {}))
+        for suffix in sorted(specimen.suffixes)
+    }
+    pytest.fail(
+        f"{specimen.route}: no extension gave exiftool "
+        f"{sorted(specimen.expect.values())}. It reported: {saw}"
     )
 
 
