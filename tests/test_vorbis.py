@@ -42,9 +42,47 @@ def flac(tmp_path: Path, block: bytes, name: str = "take.flac") -> Path:
     return path
 
 
+#: Ogg checksums its own pages with a CRC of its own: the usual polynomial,
+#: but fed most significant bit first and with neither the input nor the output
+#: reflected, so `zlib.crc32` gives a different answer and cannot be used.
+_OGG_CRC = [0] * 256
+for _byte in range(256):
+    _value = _byte << 24
+    for _ in range(8):
+        _value = ((_value << 1) ^ 0x04C11DB7) & 0xFFFFFFFF if _value & 0x80000000 else _value << 1
+    _OGG_CRC[_byte] = _value
+
+
+def _ogg_checksum(page: bytes) -> int:
+    crc = 0
+    for byte in page:
+        crc = ((crc << 8) & 0xFFFFFFFF) ^ _OGG_CRC[((crc >> 24) & 0xFF) ^ byte]
+    return crc
+
+
 def ogg(tmp_path: Path, marker: bytes, block: bytes, name: str = "take.ogg") -> Path:
+    """One complete Ogg page holding the whole comment packet.
+
+    Written as a real page rather than a plausible-looking prefix: the segment
+    table has to describe the payload and the checksum has to be over the page,
+    because a fixture no other implementation will open only proves that a
+    payload can be found by searching for it. This one was a header of zeroes
+    with a segment length of 255 and no checksum, and `exiftool` read nothing
+    out of it while this project read it perfectly.
+    """
+    payload = marker + block
+    # A packet is written as 255-byte segments, and a last one shorter than 255
+    # is what says the packet ended. A length that divides exactly needs a zero.
+    segments = [255] * (len(payload) // 255) + [len(payload) % 255]
+    page = (
+        b"OggS"
+        + struct.pack("<BBqIII", 0, 0x02, 0, 1, 0, 0)
+        + bytes([len(segments)])
+        + bytes(segments)
+    )
+    page = page[:22] + struct.pack("<I", _ogg_checksum(page + payload)) + page[26:] + payload
     path = tmp_path / name
-    path.write_bytes(b"OggS\x00\x00" + b"\x00" * 21 + b"\x01\xff" + marker + block)
+    path.write_bytes(page)
     return path
 
 

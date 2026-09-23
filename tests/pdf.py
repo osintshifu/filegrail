@@ -48,12 +48,21 @@ def document(
     font: bytes = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     extra: bytes | list[bytes] = b"",
     catalogue: bytes = b"",
+    info: bytes = b"",
 ) -> bytes:
     """A PDF drawing `pages`, one content stream each, with one font.
 
     `extra` is an object appended after the font, for the tests that need the
     font to point at one - a `/ToUnicode` CMap is an object of its own. A
     composite font points at two, and names the second `{extra2}`.
+
+    `info` is a document information dictionary. It goes in here rather than
+    being bolted on afterwards because an object added after the cross
+    reference table is built is an object the table does not list: `qpdf`
+    calls such a file damaged and rebuilds the table before reading it, and a
+    reader that follows the table properly finds no dictionary at all. A
+    fixture like that tests whether a payload can be found by searching, which
+    is not the same question as whether a PDF can be read.
     """
     extras = [extra] if isinstance(extra, bytes) else extra
     count = len(pages)
@@ -78,6 +87,8 @@ def document(
         )
     )
     bodies.extend(body for body in extras if body)
+    if info:
+        bodies.append(info)
 
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
@@ -90,6 +101,9 @@ def document(
     out += b"0000000000 65535 f \n"
     for offset in offsets:
         out += b"%010d 00000 n \n" % offset
-    out += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % (len(bodies) + 1)
+    trailer = b"<< /Size %d /Root 1 0 R" % (len(bodies) + 1)
+    if info:
+        trailer += b" /Info %d 0 R" % len(bodies)
+    out += b"trailer\n" + trailer + b" >>\n"
     out += b"startxref\n%d\n%%%%EOF\n" % start
     return bytes(out)

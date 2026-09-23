@@ -93,8 +93,16 @@ under that specimen and fails there if the reader cannot really read it.
 
 The same specimens are what `tools/build_corpus.py` writes out, with a manifest
 giving each file's expected block, expected values and digest. That corpus is
-how somebody outside the project checks these claims, and what a comparison
-against another tool is run over.
+how somebody outside the project checks these claims.
+
+It is also what `tests/test_differential.py` hands to `exiftool`, in a job of
+its own, because a fixture built from a specification and read by the parser it
+was built for agrees with itself and proves little else. The readers here search
+for payloads rather than walk container structure, which is the right choice
+when evidence arrives truncated, and it means a malformed fixture passes in
+silence. Build a specimen the way an encoder writes the file: the comparison has
+already caught a PDF whose information dictionary the cross reference table did
+not list, and an Ogg page with no checksum.
 
 Build the fixture the way a real encoder writes the file, not the way the
 specification reads. The two differ, and where they differ is where the bugs

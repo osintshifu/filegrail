@@ -263,11 +263,10 @@ def _aiff_file() -> bytes:
 
 
 def _pdf_file() -> bytes:
-    """A PDF whose Info dictionary is reachable from the trailer."""
+    """A PDF whose Info dictionary the cross reference table actually lists."""
     from .pdf import document
 
-    entry = f"6 0 obj\n<< /Author ({MARK}) /Creator (Field Press 2.1) >>\nendobj\n".encode()
-    return document([b""]).replace(b"trailer\n<<", entry + b"trailer\n<< /Info 6 0 R", 1)
+    return document([b""], info=f"<< /Author ({MARK}) /Creator (Field Press 2.1) >>".encode())
 
 
 #: Every route, and what proves it. The suffix sets come from the readers, so

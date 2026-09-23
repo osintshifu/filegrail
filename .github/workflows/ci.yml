@@ -70,6 +70,29 @@ jobs:
       - name: CASE validation
         run: pytest tests/test_case_validation.py
 
+  differential:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+          python -m pip install -e ".[dev]"
+      # A fixture built from a specification and read by the parser it was
+      # built for agrees with itself, and that is all it proves. The readers
+      # here search for payloads rather than walk container structure, which is
+      # right for evidence work and means a malformed fixture passes in silence.
+      # This has already found a PDF whose information dictionary the cross
+      # reference table did not list and an Ogg page with no checksum: read
+      # perfectly here, unreadable by anything else.
+      - name: Differential comparison
+        run: pytest tests/test_differential.py
+
   types:
     runs-on: ubuntu-latest
 

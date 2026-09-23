@@ -14,9 +14,11 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - A `case` extra installs the official CASE validator, and a job of its own holds the export against CASE 1.5.0 on every commit.
 - Every kind of relationship declares what it claims, where the claim stops and which way it reads, and a kind that declares nothing cannot reach an export.
 - `tools/build_corpus.py` writes a validation corpus: one minimal file per format the project reads, under every extension it claims, with a manifest of what each one must produce.
+- That corpus is compared against `exiftool` in a job of its own, so a fixture only this project can read is a failure rather than a silence.
 
 ### Fixed
 
+- Two test fixtures were not valid files of their format. The PDF carried an information dictionary its cross reference table did not list, which `qpdf` reports as damage, and the Ogg page had no checksum and a segment table that did not describe its payload. Both read correctly here and nowhere else.
 - A relationship that reads the same from either file is one edge rather than two. `same document` and `common ancestor` were stored twice and counted twice, because the direction came from the order the scan met the pair.
 - The CASE export no longer declares every relationship directional. A rendition of a document was exported as its parent.
 - The CASE export gives an XMP derivation the standard vocabulary word for it, which a misspelled entry had been withholding.
