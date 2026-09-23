@@ -65,8 +65,54 @@ def _pdf(path: Path) -> Path:
     return path
 
 
+#: What makes a zip an Office package rather than a zip with an Office name.
+#: Every conforming reader identifies one by this part, and a package without
+#: it is only read by something lenient enough to go looking: `exiftool` reads
+#: a one-member zip as a zip on one version and as a document on another, which
+#: is how a fixture missing this was caught.
+CONTENT_TYPES = """<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels"
+    ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-\
+officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/docProps/core.xml"
+    ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+</Types>"""
+
+PACKAGE_RELS = """<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Target="word/document.xml"
+    Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/\
+officeDocument"/>
+  <Relationship Id="rId2" Target="docProps/core.xml"
+    Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/\
+core-properties"/>
+</Relationships>"""
+
+DOCUMENT_XML = """<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>Field notes</w:t></w:r></w:p></w:body>
+</w:document>"""
+
+
 def _ooxml(path: Path) -> Path:
-    return _zipped(path, {"docProps/core.xml": CORE_XML})
+    """A package with the parts an Office document is recognised by.
+
+    The content types part comes first because that is where it belongs in an
+    OPC package, and because a reader that identifies the format by the first
+    member finds it there.
+    """
+    return _zipped(
+        path,
+        {
+            "[Content_Types].xml": CONTENT_TYPES,
+            "_rels/.rels": PACKAGE_RELS,
+            "word/document.xml": DOCUMENT_XML,
+            "docProps/core.xml": CORE_XML,
+        },
+    )
 
 
 def _odf(path: Path) -> Path:
