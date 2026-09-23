@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .lineage import attach_lineage
 from .models import FILENAME, NAME_AND_SIZE, ORIGIN, EvidenceRecord, FileRecord, category
+from .pronom import identify
 from .sources import (
     collect_browser_downloads,
     collect_quarantine_events,
@@ -343,6 +344,7 @@ def scan(
         # this is the one reader that can contradict it.
         if misnamed := read_signature(path):
             record.evidence.append(misnamed)
+        record.formats = identify(path)
         record.evidence.extend(read_mail(path))
         record.evidence.extend(history.get(path.name, []))
         record.evidence.extend(recent.get(str(path), []))

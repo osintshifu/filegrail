@@ -15,6 +15,9 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Every kind of relationship declares what it claims, where the claim stops and which way it reads, and a kind that declares nothing cannot reach an export.
 - `tools/build_corpus.py` writes a validation corpus: one minimal file per format the project reads, under every extension it claims, with a manifest of what each one must produce.
 - That corpus is compared against `exiftool` in a job of its own, so a fixture only this project can read is a failure rather than a silence.
+- Every scanned file is identified from its bytes by PRONOM PUID, name and version: `formats` in JSON, beside the type in the report and in `compare`.
+- Office, OpenDocument and EPUB files are named by what their ZIP or OLE2 container holds, so a `.docx` is `fmt/412` rather than a zip.
+- Identification is compared against DROID reading the same registry release in the differential job.
 
 ### Fixed
 

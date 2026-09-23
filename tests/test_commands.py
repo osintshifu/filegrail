@@ -467,6 +467,11 @@ def test_scan_json_records_effective_run_options_and_coverage(tmp_path: Path, ca
         "cluster": True,
         "unknown_only": False,
         "redacted": False,
+        "format_registry": {
+            "registry": "PRONOM",
+            "signature_file": "DROID_SignatureFile_V125.xml",
+            "container_file": "container-signature-20260119.xml",
+        },
         "filters": {
             "types": [],
             "extensions": ["txt"],

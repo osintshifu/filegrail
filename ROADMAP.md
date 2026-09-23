@@ -118,7 +118,7 @@ Implemented in part. MP4 and MOV name the recording device from the keys a phone
 
 ### Format identification from the bytes
 
-The signature check grows into format identification: the format and its version from the file's bytes, named by the PRONOM registry and its persistent identifiers, from a versioned snapshot of the registry compiled into the package. The extension stays a claim the bytes confirm or contradict.
+Implemented. Every scanned file on disk is identified from its bytes by PRONOM PUID, name and version, from a release of the registry compiled into the package and named in the scan's JSON. Formats built on ZIP and OLE2 are named by what the container holds. Still to come: identifying the files carried inside archives and documents.
 
 ### Formats that turn up in real material
 

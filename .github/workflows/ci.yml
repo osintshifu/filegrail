@@ -97,6 +97,24 @@ jobs:
       # perfectly here, unreadable by anything else.
       - name: Differential comparison
         run: pytest tests/test_differential.py
+      # Format identification is held against DROID, The National Archives'
+      # own reader of the registry, run on the signature files the package was
+      # compiled from. The test checks those files by digest.
+      - name: DROID and the PRONOM signature files
+        run: |
+          mkdir -p "$RUNNER_TEMP/droid" "$RUNNER_TEMP/pronom"
+          curl -fsSL -o "$RUNNER_TEMP/droid.zip" \
+            https://github.com/digital-preservation/droid/releases/download/6.9.14/droid-binary-6.9.14-bin.zip
+          echo "82eae61a216a1b33cd27f8ee673d871be805c7e60dec3b18c7d9bed47a913b0a  $RUNNER_TEMP/droid.zip" | sha256sum -c
+          unzip -q "$RUNNER_TEMP/droid.zip" -d "$RUNNER_TEMP/droid"
+          for name in DROID_SignatureFile_V125.xml container-signature-20260119.xml; do
+            curl -fsSL -o "$RUNNER_TEMP/pronom/$name" "https://cdn.nationalarchives.gov.uk/documents/$name"
+          done
+      - name: Identification against DROID
+        env:
+          DROID: ${{ runner.temp }}/droid/droid.sh
+          PRONOM_SOURCES: ${{ runner.temp }}/pronom
+        run: pytest tests/test_pronom_differential.py
 
   types:
     runs-on: ubuntu-latest

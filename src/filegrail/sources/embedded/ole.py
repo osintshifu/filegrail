@@ -19,9 +19,10 @@ the modern equivalent, because nobody has thought to strip it.
 
 from __future__ import annotations
 
+import functools
 import struct
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -186,6 +187,26 @@ def read_streams(path: Path, names: Iterable[str]) -> dict[str, bytes]:
                 found[name] = raw
     except (struct.error, ValueError, IndexError):
         return {}
+    return found
+
+
+def entries(data: bytes) -> dict[str, Callable[[], bytes] | None]:
+    """Every storage and stream of a compound document given as bytes, by path.
+
+    A stream maps to a function reading it, so a caller asking only which
+    entries exist reads none of them; a storage maps to None.
+    """
+    if not data.startswith(_SIGNATURE):
+        return {}
+    found: dict[str, Callable[[], bytes] | None] = {}
+    try:
+        container = _Container(data)
+        for path, entry in container.walk():
+            found[path] = (
+                functools.partial(container.entry_stream, entry) if entry.kind == _STREAM else None
+            )
+    except (struct.error, ValueError, IndexError):
+        return found
     return found
 
 

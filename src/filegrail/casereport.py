@@ -33,6 +33,7 @@ from .report import (
     _identifiers,
     _relative,
     _size,
+    named_formats,
 )
 from .scan import Unsearched
 from .theme import BOTH_WAYS, DOUBLE_RULE, FLAG, FULL, HALF, MIDDOT, RING, RULE, Theme, detect
@@ -538,6 +539,8 @@ def _file_block(page: _Page, case: Case, entry: CaseFile, kinds: dict[str, str])
     if folder := _folder(case, entry.record):
         page.prop("path", folder, indent)
     page.prop("type", _format(entry.record.path), indent)
+    if said := named_formats(entry.record):
+        page.prop("format", said, indent)
     page.prop("size", _size(entry.record.size), indent)
     page.add()
     if entry.state == NOTHING:
@@ -660,6 +663,8 @@ def _details(page: _Page, case: Case, files: dict[str, CaseFile], *, verbose: bo
         page.gap()
         indent = page.head(_mark(page, entry), entry.ref, _name(entry))
         page.prop("Type", _format(record.path), indent)
+        if said := named_formats(record):
+            page.prop("Format", said, indent)
         page.prop("Size", _size(record.size), indent)
         if folder := _folder(case, record):
             page.prop("Path", folder, indent)

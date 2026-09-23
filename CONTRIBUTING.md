@@ -156,6 +156,30 @@ occurrence. Declare the direction deliberately - `uco-core:isDirectional` in
 the CASE export is written straight off this field, so a kind declared wrongly
 tells a recipient that a rendition of a document is its parent.
 
+## Updating the format registry
+
+`src/filegrail/data/pronom.json` is compiled from two files The National
+Archives publishes on the DROID signature page: the signature file and the
+container signature file. Download both, then compile them:
+
+```bash
+python tools/build_pronom.py DROID_SignatureFile_V125.xml \
+    container-signature-20260119.xml src/filegrail/data/pronom.json
+```
+
+The compiler stops on any syntax it does not understand rather than drop a
+signature. Change the two file names in the `differential` job and in
+`tests/test_commands.py` to the new release, then run
+`tests/test_pronom_differential.py` against DROID locally:
+
+```bash
+DROID=/path/to/droid.sh PRONOM_SOURCES=/folder/with/both/files \
+    python -m pytest tests/test_pronom_differential.py
+```
+
+It checks that the shipped file is exactly what the two sources compile to, and
+that DROID names every file of the validation corpus as this project does.
+
 ## The local corpus
 
 `tests/test_corpus.py` reads whatever real files you have put in `test-data/`,

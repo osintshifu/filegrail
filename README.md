@@ -120,7 +120,8 @@ Examples:
 - PE version resources;
 - embedded telemetry;
 - mail headers and relay hops;
-- the file signature compared with the extension.
+- the file signature compared with the extension;
+- the file format identified from its bytes, as a PRONOM PUID.
 
 ### Activity
 
@@ -586,6 +587,20 @@ For supported signatures, FileGrail compares the extension against the bytes act
 Recognized families: JPEG, PNG, GIF, TIFF, WebP, PDF, RTF, ZIP, gzip, bzip2, XZ, Zstandard, 7-Zip, RAR, TAR, OLE Compound File, ISO Base Media, Matroska, Ogg, FLAC, MP3, WAV, AVI, SQLite, ELF, Windows PE, Mach-O, HTML, SVG, XML.
 
 A format legitimately built on another container is not a mismatch: DOCX, EPUB and JAR are ZIP files. Unknown bytes are not treated as suspicious.
+
+### Format identification
+
+Every scanned file is identified from its bytes against [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/), the file format registry of The National Archives (UK). The result is the format's PUID, name and version, for example `fmt/412 Microsoft Word for Windows 2007 onwards`. DROID, Siegfried and digital archives use the same identifiers, so a result can be compared with theirs directly.
+
+- Office documents, OpenDocument files, EPUBs and other formats built on ZIP or OLE2 are named by what the container holds, not as a generic ZIP or compound file.
+- The first and the last 64 KiB of each file are read, as in DROID's default settings.
+- A file whose bytes match no signature gets no format. Nothing is guessed from the extension.
+- Where the registry cannot tell two formats apart, both are listed.
+- Files inside archives are not identified.
+
+The report shows the format beside the type in the file details and in `compare`. JSON gives it as `formats` on each file, and `run.format_registry` names the registry release that was used.
+
+The registry data contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
 
 ---
 
@@ -1202,6 +1217,16 @@ filegrail ./case --pivots --json |
   jq -r '.identifiers[] |
          select(.type == "email") |
          .normalized'
+```
+
+Files grouped by their PRONOM format:
+
+```bash
+filegrail ./case --json |
+  jq -r '.files[] |
+         select(.formats | length > 0) |
+         "\(.formats[0].puid)\t\(.formats[0].name)\t\(.path)"' |
+  sort
 ```
 
 Pivots shared by more than one file:

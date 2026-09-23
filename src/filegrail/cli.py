@@ -28,6 +28,7 @@ from .doctor import survey
 from .filters import FAMILIES, UnknownType, describe, selection
 from .htmlreport import render_html
 from .identify import extract
+from .pronom import registry
 from .report import (
     render_compare,
     render_doctor,
@@ -623,6 +624,7 @@ def _scan(rest: list[str]) -> int:
         "cluster": args.cluster,
         "unknown_only": args.unknown_only,
         "redacted": args.redact,
+        "format_registry": registry().describe(),
         "filters": {
             "types": list(args.families),
             "extensions": list(args.extensions),

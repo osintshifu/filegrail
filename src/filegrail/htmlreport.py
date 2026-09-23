@@ -63,6 +63,7 @@ from .report import (
     _stamp,
     _timeline_key,
     _timeline_value,
+    named_formats,
     shown,
 )
 from .scan import Unsearched
@@ -1355,6 +1356,10 @@ def _detail(
 ) -> str:
     record = entry.record
     body = []
+    if said := named_formats(record):
+        body.append(
+            f'<div class="extra"><span class="k">format</span><ul><li>{_e(said)}</li></ul></div>'
+        )
     for name in CATEGORIES:
         held = [found for found in record.evidence if category(found) == name]
         if not held:

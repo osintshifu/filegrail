@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # a Link is attached by `lineage`, which imports this module
     from .lineage import Link
+    from .pronom import Format
 
 # --- what a record is about ---------------------------------------------------
 
@@ -474,6 +475,10 @@ class FileRecord:
     parent: str | None = None
     member: str | None = None
 
+    #: The formats the file's bytes match in the PRONOM registry. None where
+    #: the bytes were not examined, empty where nothing in the registry matched.
+    formats: list[Format] | None = None
+
     @property
     def primary(self) -> EvidenceRecord | None:
         """One record for a file that needs one row, by presentation order.
@@ -526,6 +531,8 @@ class FileRecord:
         if self.parent is not None:
             data["parent"] = self.parent
             data["member"] = self.member
+        if self.formats is not None:
+            data["formats"] = [found.to_dict() for found in self.formats]
         data["evidence"] = [record.to_dict() for record in self.evidence]
         data["links"] = [link.to_dict() for link in self.links]
         return data

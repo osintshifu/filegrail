@@ -398,6 +398,21 @@ def _format(path: str) -> str:
     return format_of(path, Path(path).suffix.lower())
 
 
+def named_formats(record: FileRecord) -> str | None:
+    """`fmt/18 Acrobat PDF 1.4 - Portable Document Format 1.4`: what the bytes are."""
+    if not record.formats:
+        return None
+    return " or ".join(
+        " ".join(part for part in (found.puid, found.name, found.version) if part)
+        for found in record.formats
+    )
+
+
+def _puids(theme: Theme, record: FileRecord) -> str:
+    """`fmt/18`, or every PUID where the registry names more than one."""
+    return " or ".join(found.puid for found in record.formats or ()) or _blank(theme)
+
+
 def _counts(theme: Theme, rows: list[tuple[str, str]]) -> list[str]:
     """The summary block: one fact a line, the label in a column of its own."""
     width = max(len(name) for name, _ in rows)
@@ -873,7 +888,8 @@ def _one_file(theme: Theme, record: FileRecord, root: Path) -> list[str]:
     lines.extend(
         _counts(
             theme,
-            [("path", record.path), ("mtime", _stamp(shown(record.btime or record.mtime)))],
+            [("path", record.path), ("mtime", _stamp(shown(record.btime or record.mtime)))]
+            + ([("format", said)] if (said := named_formats(record)) else []),
         )
     )
     return lines
@@ -1503,6 +1519,7 @@ def render_compare(
             ("field", *names),
             [
                 ("type", _format(left.path), _format(right.path)),
+                ("format", _puids(theme, left), _puids(theme, right)),
                 ("size", _size(left.size), _size(right.size)),
             ],
             keep=3,
