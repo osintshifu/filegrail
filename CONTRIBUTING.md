@@ -90,6 +90,52 @@ are: a HEIC names an `Exif` item in its item table long before the payload
 appears, so a reader that stops at the first marker decodes the table and
 reports nothing — on a green suite, because no synthetic fixture had a table.
 
+## Adding a relationship to the graph
+
+The graph is only worth reading if every claim in it means one stated thing.
+Two keys and one table hold that still.
+
+**A node is keyed by what it is, not by what it is called.** A file's key is the
+path it was found at, which identifies it inside one scan and nowhere else: a
+name identifies nothing, because two directories each holding a `report.pdf`
+hold two files. An identifier's key is its type together with its normalized
+value, since the same text is not always the same thing - `example.org` is a
+domain in one file and the tail of an address in another. Across scans a path
+means nothing at all, which is why `--case-jsonld` re-identifies a file by its
+SHA-256 where one was computed, and scopes it to the scan target where none was.
+
+**A relationship is keyed by its two ends and its kind**, direction included.
+Everything else - how many occurrences, which field carried them, when - is
+evidence hanging on that one edge. A document naming one person in `creator`
+and again in `lastModifiedBy` is therefore one `author` edge resting on two
+grounds, and that is a decision rather than a side effect of merging: the
+fields that name a person differ across every format that has any, and one kind
+per field is a list of fields, not a taxonomy. What the edge claims is narrowed
+to match. It says the file names this person in a field meant to name a person,
+and explicitly not that they wrote it; which field it was is in the evidence,
+and in a filterable column of the CSV export.
+
+**Every kind declares its meaning** in `TAXONOMY` in `graph.py`, and a kind that
+is not in the table cannot reach an export: every edge is keyed through it, so
+an undeclared kind ends the scan instead of arriving in a case file undefined.
+Say four things about a new one:
+
+| | |
+|:---|:---|
+| **direction** | `DIRECTED` where the two ends are not interchangeable, which is nearly always: a file has an identifier and the identifier does not have the file. `SYMMETRIC` where the claim reads the same from either end. |
+| **claim** | What an edge of this kind asserts, in one line. If it takes two, it is probably two kinds. |
+| **limits** | Where the assertion stops. A make and model names a product thousands of people own, never which camera; an XMP link is unsigned text that copying a file copies. |
+| **inverse** | The kind that is this one read backwards, where the graph carries both halves under their own names, as `derived from` and `source of` do. |
+
+Direction is the part that is easy to get wrong, because a scan meets a
+symmetric claim from both files and will happily store both halves. That is one
+finding reported twice, counted twice and drawn twice, so `SYMMETRIC` kinds are
+ordered by node key before they are stored and merged into one edge. Its weight
+is not the sum of the halves either: one occurrence seen from two ends is one
+occurrence. Declare the direction deliberately - `uco-core:isDirectional` in
+the CASE export is written straight off this field, so a kind declared wrongly
+tells a recipient that a rendition of a document is its parent.
+
 ## The local corpus
 
 `tests/test_corpus.py` reads whatever real files you have put in `test-data/`,

@@ -34,7 +34,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from . import __version__
-from .graph import Graph, Node, Relationship
+from .graph import DIRECTED, TAXONOMY, Graph, Node, Relationship
 from .models import FileRecord
 
 #: The namespaces a reader needs to make sense of this document. They are
@@ -85,7 +85,7 @@ _KIND: dict[str, str] = {
     "member of archive": "Contained_Within",
     "embedded in": "Contained_Within",
     "listed in torrent": "Contained_Within",
-    "derived-from": "Derived_From",
+    "derived from": "Derived_From",
 }
 
 
@@ -256,7 +256,10 @@ def _relationship(
         "uco-core:source": {"@id": identity.node(relationship.source)},
         "uco-core:target": {"@id": identity.node(relationship.target)},
         "uco-core:kindOfRelationship": _KIND.get(relationship.kind, relationship.kind),
-        "uco-core:isDirectional": True,
+        # What the taxonomy says, not a constant. Two of these kinds read the
+        # same from either end, and UCO has this field so that a reader is
+        # told which - a rendition of a document is not its parent.
+        "uco-core:isDirectional": TAXONOMY[relationship.kind].direction == DIRECTED,
         "fg:kind": relationship.kind,
         "fg:occurrences": relationship.count,
         "uco-core:hasFacet": [

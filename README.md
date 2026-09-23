@@ -817,6 +817,8 @@ Relationships are reported as:
 - `same document`;
 - `common ancestor`.
 
+`derived from` and `source of`, like `descends from` and `original of`, are given from both ends, so a file names what it came from and a master names what came from it. `same document` and `common ancestor` read the same from either file, so each pair is connected once rather than twice.
+
 A shared original identifier is not presented as direct derivation, because files generated from the same template legitimately share an ancestor.
 
 ### Clustering

@@ -396,3 +396,88 @@ def test_a_derived_relationship_shows_its_working():
         "rule": "email-host",
         "premise": "ann@example.org",
     }
+
+
+# --- what the taxonomy is for ------------------------------------------------
+
+
+def test_a_symmetric_relationship_is_one_edge_rather_than_two():
+    """Two renditions of one document each name the other, so the scan meets
+    the claim twice. It is still one claim, and storing both halves reported it
+    twice, counted it twice and drew two arrows between the same pair."""
+    from filegrail.graph import build_graph
+
+    def rendition(name: str) -> FileRecord:
+        return _record(
+            f"/case/{name}",
+            EvidenceRecord(source="xmp", fields={"xmpMM:DocumentID": "xmp.did:AAAA1111"}),
+        )
+
+    files = [rendition("web.jpg"), rendition("print.tif")]
+    attach_lineage(files)
+
+    graph = build_graph(files, [])
+
+    same = [edge for edge in graph.relationships if edge.kind == "same document"]
+    assert len(same) == 1
+    assert (same[0].source, same[0].target) == ("file:/case/print.tif", "file:/case/web.jpg")
+    # One claim met from both ends is one occurrence, not two: a weight that
+    # counted the halves would grow with the number of files that can see it.
+    assert same[0].count == 1
+    assert {found.place for found in same[0].evidence} == {"XMP · xmpMM:DocumentID"}
+
+
+def test_an_inverse_pair_stays_two_edges_and_names_itself_both_ways():
+    """`descends from` and `original of` are the same fact from two ends, and
+    both are kept on purpose: either end may be the one a reader starts from.
+    That is a decision the taxonomy states, not a duplicate to be cleaned up."""
+    from filegrail.graph import TAXONOMY, build_graph
+
+    child = _record(
+        "/case/child.jpg",
+        EvidenceRecord(
+            source="xmp",
+            fields={
+                "xmpMM:DocumentID": "xmp.did:CHILD111",
+                "xmpMM:OriginalDocumentID": "xmp.did:ROOT0000",
+            },
+        ),
+    )
+    root = _record(
+        "/case/root.jpg",
+        EvidenceRecord(source="xmp", fields={"xmpMM:DocumentID": "xmp.did:ROOT0000"}),
+    )
+    attach_lineage([child, root])
+
+    graph = build_graph([child, root], [])
+
+    assert {edge.kind for edge in graph.relationships} == {"descends from", "original of"}
+    assert TAXONOMY["descends from"].inverse == "original of"
+    assert TAXONOMY["original of"].inverse == "descends from"
+
+
+def test_a_relationship_nobody_declared_cannot_reach_an_export():
+    """The freeze is in the code, not in a list somebody has to remember to
+    update: every edge is keyed through the taxonomy on the way into the graph,
+    so a kind whose meaning was never written down stops the scan instead of
+    arriving in a file that somebody else has to interpret."""
+    import pytest
+
+    from filegrail.graph import relationship_key
+
+    with pytest.raises(KeyError):
+        relationship_key("file:/case/a.jpg", "file:/case/b.jpg", "looks related")
+
+
+def test_the_taxonomy_agrees_with_itself():
+    """An inverse that is not mutual, or a symmetric kind that also claims an
+    inverse, is a table that says two things at once - and `isDirectional` in
+    the CASE export is written straight off it."""
+    from filegrail.graph import SYMMETRIC, TAXONOMY
+
+    for name, kind in TAXONOMY.items():
+        if kind.direction == SYMMETRIC:
+            assert kind.inverse is None, name
+            continue
+        if kind.inverse is not None:
+            assert TAXONOMY[kind.inverse].inverse == name, name

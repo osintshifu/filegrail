@@ -142,3 +142,48 @@ def test_nothing_in_the_document_points_at_something_missing_from_it():
         ]
         == "2026/014"
     )
+
+
+def test_a_symmetric_relationship_is_not_exported_as_directional():
+    """UCO carries `isDirectional` so a reader is told which relationships have
+    a direction worth reading. Writing `true` on every one of them tells a
+    recipient that a rendition of a document is its parent."""
+    nodes = (
+        Node("file:/case/web.jpg", "file", "/case/web.jpg"),
+        Node("file:/case/print.tif", "file", "/case/print.tif"),
+    )
+    ground = RelationshipEvidence(
+        source="xmp", place="XMP · xmpMM:DocumentID", corpus="metadata", count=1
+    )
+    graph = Graph(
+        nodes,
+        (
+            Relationship(nodes[0].id, nodes[1].id, "same document", 1, (ground,)),
+            Relationship(nodes[0].id, nodes[1].id, "derived from", 1, (ground,)),
+        ),
+    )
+
+    document = _document(
+        graph,
+        [
+            FileRecord(path=node.value, size=10, mtime=NOW, sha256=digest * 64)
+            for node, digest in zip(nodes, "ab", strict=True)
+        ],
+    )
+
+    stated = {
+        edge["fg:kind"]: edge["uco-core:isDirectional"]
+        for edge in _typed(document, "uco-observable:ObservableRelationship")
+    }
+    assert stated == {"same document": False, "derived from": True}
+
+
+def test_the_case_vocabulary_names_only_relationships_that_exist():
+    """A mapping keyed on a kind nothing emits is silently never applied. This
+    export carried `derived-from` for a relationship spelled `derived from`, so
+    the one lineage relation with a word of its own in the CASE vocabulary went
+    out under ours instead, and every test still passed."""
+    from filegrail.caseexport import _KIND
+    from filegrail.graph import TAXONOMY
+
+    assert set(_KIND) <= set(TAXONOMY), sorted(set(_KIND) - set(TAXONOMY))

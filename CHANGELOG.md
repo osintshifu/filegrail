@@ -12,6 +12,13 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - `--case-jsonld` exports the evidence graph as CASE/UCO JSON-LD: a relationship is an object carrying its own evidence, and the document records which tool produced it, from what and when. Validated against CASE 1.5.0, with no JSON-LD library and no network request.
 - A file in that export is identified by its SHA-256 where one was taken and by where it was found otherwise, so an identifier claims no more than the evidence supports.
 - A `case` extra installs the official CASE validator, and a job of its own holds the export against CASE 1.5.0 on every commit.
+- Every kind of relationship declares what it claims, where the claim stops and which way it reads, and a kind that declares nothing cannot reach an export.
+
+### Fixed
+
+- A relationship that reads the same from either file is one edge rather than two. `same document` and `common ancestor` were stored twice and counted twice, because the direction came from the order the scan met the pair.
+- The CASE export no longer declares every relationship directional. A rendition of a document was exported as its parent.
+- The CASE export gives an XMP derivation the standard vocabulary word for it, which a misspelled entry had been withholding.
 
 ### Changed
 

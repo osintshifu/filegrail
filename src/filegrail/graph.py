@@ -45,6 +45,165 @@ ARCHIVE_MEMBER = "member of archive"
 EMBEDDED_IN = "embedded in"
 TORRENT_MEMBER = "listed in torrent"
 
+#: How the two ends of a relationship stand to each other.
+#:
+#: Directed is the ordinary case: a file has an identifier and the identifier
+#: does not have the file. Symmetric means the claim reads the same from either
+#: end, so it is one edge - a scan reaches such a claim from both files, and
+#: keeping both halves would report one finding twice and count it twice.
+DIRECTED = "directed"
+SYMMETRIC = "symmetric"
+
+
+@dataclass(frozen=True, slots=True)
+class Kind:
+    """What one relationship is allowed to mean."""
+
+    #: `DIRECTED` or `SYMMETRIC`, read by `relationship_key`. So it is this
+    #: table that decides what counts as one edge, rather than the order a scan
+    #: happened to visit two files in.
+    direction: str
+
+    #: What an edge of this kind asserts.
+    claim: str
+
+    #: Where the assertion stops - the half a reader is most likely to supply
+    #: for themselves, and the half this tool exists to refuse to supply.
+    limits: str
+
+    #: The kind that is this one read backwards, where the graph carries both.
+    #: Two named edges rather than one symmetric edge, because each end names
+    #: the other in its own words and either may be where a reader starts.
+    inverse: str | None = None
+
+
+#: Every relationship the graph can hold, and what it is allowed to mean.
+#:
+#: This table is the taxonomy rather than a description of one: `direction` is
+#: read at build time, and `tests/test_graph.py` holds the keys against the
+#: kinds the code can emit, so a kind that reaches an export undeclared is a
+#: failing test rather than an edge nobody defined.
+TAXONOMY: dict[str, Kind] = {
+    HAS_IDENTIFIER: Kind(
+        DIRECTED,
+        "the file carries this value, in the place the evidence names",
+        "not that the file is about it, nor that whoever holds it touched the file",
+    ),
+    ORIGIN_URL: Kind(
+        DIRECTED,
+        "a download record names this URL as where the bytes came from",
+        "the record was written by the downloading program and travels with the file",
+    ),
+    REFERRER: Kind(
+        DIRECTED,
+        "the download record names this page as where the download was started",
+        "not that anybody in particular was on that page",
+    ),
+    DIGEST_OF: Kind(
+        DIRECTED,
+        "this digest is the digest of that address",
+        "the address was recovered by matching, so the file names the digest, not the address",
+    ),
+    EMAIL_DOMAIN: Kind(
+        DIRECTED,
+        "the address is at that domain",
+        "read out of the address itself; the domain need not exist or be controlled by anyone",
+    ),
+    URL_HOST: Kind(
+        DIRECTED,
+        "the URL names that host",
+        "read out of the URL itself, which anybody can write",
+    ),
+    CONTENT_HASH: Kind(
+        DIRECTED,
+        "these bytes hash to that value",
+        "identifies the content and nothing else - not the name, the place or the time",
+    ),
+    CAMERA_BODY: Kind(
+        DIRECTED,
+        "the file carries that body serial, which is assigned per unit",
+        "the serial is text in metadata and is copied wherever the metadata is copied",
+    ),
+    CAMERA_LENS: Kind(
+        DIRECTED,
+        "the file carries that lens serial",
+        "a lens is lent, kept across an upgrade and sold on; it does not name a photographer",
+    ),
+    CAMERA_MODEL: Kind(
+        DIRECTED,
+        "the file names that make and model",
+        "a product thousands of people own, never which camera",
+    ),
+    AUTHORSHIP: Kind(
+        DIRECTED,
+        "the file names this person in a field meant to name a person",
+        "not that they wrote, edited or own it; which field it was is in the evidence",
+    ),
+    ARCHIVE_MEMBER: Kind(
+        DIRECTED,
+        "the archive lists this file among its entries",
+        "not that the copy on disk is the copy the archive holds",
+    ),
+    EMBEDDED_IN: Kind(
+        DIRECTED,
+        "the container carries this file inside it",
+        "not that the container is where the file was first written",
+    ),
+    TORRENT_MEMBER: Kind(
+        DIRECTED,
+        "the torrent lists a file of this name and size",
+        "a name and a size, not the bytes: the tie is an association, not an identity",
+    ),
+    DERIVED_FROM: Kind(
+        DIRECTED,
+        "this file states it was made from that one",
+        "plain text in a packet nobody signs, copied along with everything else",
+        inverse=SOURCE_OF,
+    ),
+    SOURCE_OF: Kind(
+        DIRECTED,
+        "that file states it was made from this one",
+        "the same unsigned statement, read from the end that did not make it",
+        inverse=DERIVED_FROM,
+    ),
+    SAME_DOCUMENT: Kind(
+        SYMMETRIC,
+        "both files state the same document identifier: two renditions of one document",
+        "neither came from the other, and both statements are copyable text",
+    ),
+    DESCENDS_FROM: Kind(
+        DIRECTED,
+        "this file names that one as the first document in its chain",
+        "the distance is unknown: one save or fifty",
+        inverse=ORIGINAL_OF,
+    ),
+    ORIGINAL_OF: Kind(
+        DIRECTED,
+        "that file names this one as the first document in its chain",
+        "the same claim from the other end, at the same unknown distance",
+        inverse=DESCENDS_FROM,
+    ),
+    COMMON_ANCESTOR: Kind(
+        SYMMETRIC,
+        "both files name the same first document, which is neither of them",
+        "the weakest of these: a template carries its XMP into every file made from it",
+    ),
+}
+
+
+def relationship_key(source: str, target: str, kind: str) -> tuple[str, str, str]:
+    """What makes one relationship one relationship: its two ends and its kind.
+
+    Direction is part of the key, because for most kinds the ends are not
+    interchangeable - a file has an identifier, and the identifier does not
+    have the file. Where `TAXONOMY` says the ends *are* interchangeable the
+    pair is ordered first, so one claim has one key however the scan reached
+    it, and a mirrored half cannot arrive as a second finding.
+    """
+    if TAXONOMY[kind].direction == SYMMETRIC and target < source:
+        source, target = target, source
+    return (source, target, kind)
+
 
 @dataclass(frozen=True, slots=True)
 class Node:
@@ -140,10 +299,26 @@ class Graph:
 
 
 def file_node_id(path: str) -> str:
+    """A file's identity inside one scan: the path it was found at.
+
+    Deliberately not its name, which identifies nothing - two directories each
+    holding a `report.pdf` hold two files. Deliberately not its hash either,
+    because the graph has to carry files that were never hashed, and a node
+    whose key changed with `--hash` would not be the same node between two
+    runs of one scan. This key therefore means nothing outside the scan that
+    produced it, which is why the CASE export replaces it with one that does.
+    """
     return f"file:{path}"
 
 
 def identifier_node_id(identifier: Identifier) -> str:
+    """An identifier's identity: its type and its normalized value.
+
+    Normalized rather than as written, so one address in two spellings is one
+    node. Typed as well as valued, because the same text is not always the
+    same thing - `example.org` is a domain in one file and the tail of an
+    address in another, and merging them would invent a pivot.
+    """
     return f"{identifier.type}:{identifier.normalized}"
 
 
@@ -209,14 +384,21 @@ def _one_edge_per_claim(relationships: list[Relationship]) -> tuple[Relationship
     """
     merged: dict[tuple[str, str, str], Relationship] = {}
     for edge in relationships:
-        key = (edge.source, edge.target, edge.kind)
+        key = relationship_key(edge.source, edge.target, edge.kind)
+        symmetric = TAXONOMY[edge.kind].direction == SYMMETRIC
         standing = merged.get(key)
         if standing is None:
-            merged[key] = edge
+            # Stored the way the key spells it, so a symmetric claim lies in
+            # one direction whichever end the scan reached it from.
+            merged[key] = replace(edge, source=key[0], target=key[1])
             continue
         merged[key] = replace(
             standing,
-            count=standing.count + edge.count,
+            # A second ground for a directed claim is a second occurrence. A
+            # symmetric claim met from its other end is the same occurrence
+            # seen twice, and adding it up would inflate every weight in the
+            # export by exactly the number of files that can see it.
+            count=max(standing.count, edge.count) if symmetric else standing.count + edge.count,
             evidence=tuple(dict.fromkeys(standing.evidence + edge.evidence)),
         )
     return tuple(sorted(merged.values(), key=lambda edge: (edge.source, edge.target, edge.kind)))

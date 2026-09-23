@@ -27,6 +27,7 @@ import pytest
 from filegrail.caseexport import render_case_jsonld
 from filegrail.graph import build_graph
 from filegrail.identify import extract
+from filegrail.lineage import attach_lineage
 from filegrail.models import EvidenceRecord, FileRecord
 
 #: The version the export is written against. Pinned on purpose: the shapes
@@ -42,8 +43,11 @@ pytestmark = pytest.mark.skipif(
 
 def _corpus() -> list[FileRecord]:
     """One of everything the export has a decision to make about: a file with a
-    digest and one without, an origin, a derivable identifier and a person."""
-    return [
+    digest and one without, an origin, a derivable identifier, a person, and a
+    pair of renditions, which is the only way to reach a relationship the
+    taxonomy calls symmetric and the only way `isDirectional: false` is ever
+    written. The shapes that are not exercised are the ones that break."""
+    records = [
         FileRecord(
             path="/case/invoice.pdf",
             size=2048,
@@ -72,10 +76,21 @@ def _corpus() -> list[FileRecord]:
                     source="device-metadata",
                     block="exif",
                     fields={"Make": "NIKON", "Model": "COOLPIX P6000", "Artist": "Ann Shaw"},
-                )
+                ),
+                EvidenceRecord(source="xmp", fields={"xmpMM:DocumentID": "xmp.did:AAAA1111"}),
+            ],
+        ),
+        FileRecord(
+            path="/case/photo.tif",
+            size=8192,
+            mtime="2026-03-30T14:05:00Z",
+            evidence=[
+                EvidenceRecord(source="xmp", fields={"xmpMM:DocumentID": "xmp.did:AAAA1111"}),
             ],
         ),
     ]
+    attach_lineage(records)
+    return records
 
 
 def test_what_the_export_writes_is_valid_case(tmp_path: Path):
@@ -96,7 +111,13 @@ def test_what_the_export_writes_is_valid_case(tmp_path: Path):
     # Every relationship the corpus can produce has to be in what was checked,
     # or the run proves nothing about the shapes that were not exercised.
     kinds = {edge.kind for edge in graph.relationships}
-    assert {"has identifier", "origin URL", "author", "email domain"} <= kinds
+    assert {
+        "has identifier",
+        "origin URL",
+        "author",
+        "email domain",
+        "same document",
+    } <= kinds
 
     done = subprocess.run(
         ["case_validate", "--built-version", VERSION, str(written)],
