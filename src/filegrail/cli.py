@@ -298,13 +298,18 @@ def _image_parser(
     parser.add_argument(
         "-o",
         "--out",
-        required=True,
         type=Path,
         metavar="FILE",
         help=(
             "Write the digital image examination report to this HTML file; working images "
-            "and analytical outputs go to a directory beside it."
+            "and analytical outputs go to a directory beside it. Required unless --json."
         ),
+    )
+    parser.add_argument(
+        "-j",
+        "--json",
+        action="store_true",
+        help="Output the facts, methods and JPEG structure as JSON, without images.",
     )
     parser.add_argument(
         "--redact",
@@ -806,6 +811,11 @@ def _image(rest: list[str]) -> int:
     if root.is_file() and root.suffix.lower() not in PHOTO_SUFFIXES:
         print(f"filegrail: unsupported image: {args.path}", file=sys.stderr)
         return 2
+    if args.json:
+        return _image_json(args, root)
+    if args.out is None:
+        print("filegrail: image needs --out FILE for the report, or --json", file=sys.stderr)
+        return 2
 
     output = args.out.resolve()
     images = None if args.embed else output.with_name(f"{output.stem}.files")
@@ -861,6 +871,26 @@ def _image(rest: list[str]) -> int:
         backup=backup,
         keep_assets=not args.redact,
     )
+
+
+def _image_json(args: argparse.Namespace, root: Path) -> int:
+    from .photo import PHOTO_SUFFIXES, analyse_photos, collection_to_dict
+    from .report import document
+
+    written = args.out.resolve() if args.out else None
+    records = scan(
+        root,
+        recursive=not args.no_recurse,
+        hash_files=True,
+        follow_archives=False,
+        suffixes=PHOTO_SUFFIXES,
+        exclude_paths={written} if written else None,
+    )
+    collection = analyse_photos(records, root, redact=args.redact, pixels=False)
+    if not collection.photos:
+        print(f"filegrail: no supported images found in {args.path}", file=sys.stderr)
+        return 2
+    return _emit(document("image", collection_to_dict(collection)), written, exact=True)
 
 
 def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:

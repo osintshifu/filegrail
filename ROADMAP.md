@@ -159,7 +159,7 @@ Implemented. `filegrail mcp` runs a local Model Context Protocol server over sta
 
 ### Image examination as JSON
 
-`filegrail image` writes an HTML report only. A JSON form of the same findings would let an agent, or any other program, use the image examination.
+Implemented. `filegrail image --json` gives the facts, method coverage and JPEG structure of the examination as data, and the MCP server offers the same as the `image` tool. Pictures stay in the HTML report.
 
 ## Later
 

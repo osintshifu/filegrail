@@ -193,6 +193,24 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "image",
+        "title": "Examine images",
+        "description": (
+            "Digital image examination of a photograph or a directory of them: JPEG "
+            "structure and quantization, quality estimate, embedded previews, EXIF "
+            "consistency and camera serial groups. Facts, conflicts and review signals, "
+            "each with the method that produced it. No pictures."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Image or directory to examine."},
+                **_PAGE,
+            },
+            "required": ["path"],
+        },
+    },
+    {
         "name": "compare",
         "title": "Compare two files",
         "description": "Two files side by side: format, size, and the metadata they share or not.",
@@ -263,6 +281,7 @@ class Server:
             "findings": self._findings,
             "pivots": self._pivots,
             "neighbors": self._neighbors,
+            "image": self._image,
             "compare": self._compare,
         }
 
@@ -519,6 +538,24 @@ class Server:
             and (not kind or relationship["kind"] == kind)
         ]
         return {"node": node, **_page(rows, arguments), "untrusted": UNTRUSTED}
+
+    def _image(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        from .photo import PHOTO_SUFFIXES, analyse_photos, collection_to_dict
+        from .scan import scan
+
+        root = self._allowed(_text(arguments, "path"))
+        records = scan(
+            root,
+            hash_files=True,
+            follow_archives=False,
+            suffixes=PHOTO_SUFFIXES,
+            home=self.home,
+            use_profile=self.profile,
+        )
+        examined = collection_to_dict(analyse_photos(records, root, pixels=False))
+        photos = examined.pop("photos")
+        assert isinstance(photos, list)
+        return {**examined, "photos": _page(photos, arguments), "untrusted": UNTRUSTED}
 
     def _compare(self, arguments: dict[str, Any]) -> dict[str, Any]:
         from .report import render_json_compare

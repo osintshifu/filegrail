@@ -74,6 +74,7 @@ SCHEMAS: dict[str, int] = {
     "compare": 2,
     "doctor": 1,
     "clean": 1,
+    "image": 1,
 }
 
 #: Sources describing what a file says about itself, rather than where it came from.

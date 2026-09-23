@@ -195,5 +195,5 @@ def test_the_official_client_can_use_the_server(tmp_path, mode, version):
     spoken, names, scanned = anyio.run(session)
 
     assert spoken == version
-    assert names == ["scan", "files", "file", "findings", "pivots", "neighbors", "compare"]
+    assert names == ["scan", "files", "file", "findings", "pivots", "neighbors", "image", "compare"]
     assert scanned["summary"]["formats"] == {"fmt/412": 1}

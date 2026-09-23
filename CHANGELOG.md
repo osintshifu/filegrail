@@ -19,6 +19,7 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Office, OpenDocument and EPUB files are named by what their ZIP or OLE2 container holds, so a `.docx` is `fmt/412` rather than a zip.
 - Identification is compared against DROID reading the same registry release in the differential job.
 - `filegrail mcp` serves scans to AI agents over the Model Context Protocol: read-only, limited to the given directories, without the user profile unless asked.
+- `filegrail image --json` gives the image examination as data, and the MCP server offers it as the `image` tool.
 
 ### Fixed
 

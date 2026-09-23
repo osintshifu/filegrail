@@ -168,12 +168,14 @@ def analyse_photos(
     *,
     redact: bool = False,
     budget: int | None = IMAGE_BUDGET,
+    pixels: bool = True,
 ) -> PhotoCollection:
     """Augment supported on-disk still images with bounded photo findings.
 
     `budget` caps the pixel-bearing bytes of the whole report; `None` lifts the
     cap. Photographs past it keep every fact read from them and lose only their
-    pictures, and say which.
+    pictures, and say which. `pixels` False skips the methods whose output is a
+    picture, for a reader that cannot look at one.
     """
     allowance = _Budget(budget)
     photos: list[PhotoResult] = []
@@ -183,7 +185,7 @@ def analyse_photos(
             continue
         if not path.is_file():
             continue
-        photos.append(_analyse_photo(len(photos) + 1, record, path, redact, allowance))
+        photos.append(_analyse_photo(len(photos) + 1, record, path, redact, allowance, pixels))
 
     groups: dict[str, list[str]] = {}
     for photo in photos:
@@ -202,7 +204,7 @@ def analyse_photos(
 
 
 def _analyse_photo(
-    number: int, record: FileRecord, path: Path, redact: bool, budget: _Budget
+    number: int, record: FileRecord, path: Path, redact: bool, budget: _Budget, pixels: bool
 ) -> PhotoResult:
     suffix = path.suffix.lower()
     facts: list[PhotoFact] = []
@@ -276,7 +278,7 @@ def _analyse_photo(
     ):
         if not found:
             continue
-        if not redact and not budget.spent:
+        if pixels and not redact and not budget.spent:
             artifacts.append(_preview_artifact(key, label, found))
         facts.append(
             PhotoFact(
@@ -332,6 +334,14 @@ def _analyse_photo(
                 "Pixel diagnostics",
                 "not evaluated",
                 "pixel-bearing artifacts omitted by redaction",
+            )
+        )
+    elif not pixels:
+        methods.append(
+            MethodCoverage(
+                "Pixel diagnostics",
+                "not evaluated",
+                "its outputs are images, which this output does not carry",
             )
         )
     elif budget.spent:
@@ -465,3 +475,96 @@ def _integer_field(evidence: tuple[EvidenceRecord, ...], *names: str) -> int | N
 def _evidence_value(evidence: tuple[EvidenceRecord, ...], first: str, second: str) -> str | None:
     parts = tuple(value for name in (first, second) if (value := _field(evidence, name)))
     return " ".join(parts) or None
+
+
+def collection_to_dict(collection: PhotoCollection) -> dict[str, object]:
+    """The examination as data: every fact, method and structural reading.
+
+    Pictures are not carried. A preview or an analytical map is named by the
+    fact that describes it, and its pixels stay in the HTML report.
+    """
+
+    def jpeg(found: JpegAnalysis | None) -> dict[str, object] | None:
+        if found is None:
+            return None
+        return {
+            "width": found.width,
+            "height": found.height,
+            "encoding": found.encoding,
+            "precision": found.precision,
+            "components": [list(component) for component in found.components],
+            "scans": found.scans,
+            "restart_interval": found.restart_interval,
+            "markers": [
+                {
+                    "name": marker.name,
+                    "code": marker.code,
+                    "offset": marker.offset,
+                    "length": marker.length,
+                }
+                for marker in found.markers
+            ],
+            "quantization": [
+                {"identifier": t.identifier, "precision": t.precision, "values": list(t.values)}
+                for t in found.quantization
+            ],
+            "huffman": [
+                {"class": t.table_class, "identifier": t.identifier, "symbols": t.symbols}
+                for t in found.huffman
+            ],
+            "comments": list(found.comments),
+            "eoi_offset": found.eoi_offset,
+            "trailing_bytes": found.trailing_bytes,
+            "quality": None
+            if found.quality is None
+            else {
+                "quality": found.quality.quality,
+                "exact": found.quality.exact,
+                "distance": found.quality.distance,
+            },
+        }
+
+    return {
+        "root": collection.root,
+        "redacted": collection.redacted,
+        "summary": {
+            "photographs": len(collection.photos),
+            "conflicts": sum(
+                fact.state == CONFLICT for one in collection.photos for fact in one.facts
+            ),
+            "signals": sum(fact.state == SIGNAL for one in collection.photos for fact in one.facts),
+        },
+        "camera_groups": [
+            {"serial": serial, "paths": list(paths)} for serial, paths in collection.camera_groups
+        ],
+        "photos": [
+            {
+                "path": photo.path,
+                "format": photo.format,
+                "size": photo.size,
+                "mtime": photo.mtime,
+                "sha256": photo.sha256,
+                "width": photo.width,
+                "height": photo.height,
+                "camera": photo.camera,
+                "serial": photo.serial,
+                "facts": [
+                    {
+                        "label": fact.label,
+                        "value": fact.value,
+                        "state": fact.state,
+                        "method": fact.method,
+                        "detail": fact.detail,
+                    }
+                    for fact in photo.facts
+                ],
+                "methods": [
+                    {"name": method.name, "status": method.status, "detail": method.detail}
+                    for method in photo.methods
+                ],
+                "jpeg": jpeg(photo.jpeg),
+                "evidence": [record.to_dict() for record in photo.evidence],
+            }
+            for photo in collection.photos
+        ],
+    }

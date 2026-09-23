@@ -20,14 +20,14 @@ import pytest
 from filegrail import __version__
 from filegrail.cli import PARSERS, main
 
+from .test_formats import _jpeg
+
 #: `menu` inherits `--json` from the shared options but is interactive: it
 #: refuses to run without a terminal, so it has no document to stamp.
 INTERACTIVE = {"menu"}
 
-#: `image` (and its alias `photo`) writes one HTML report and takes no `--json`. There is no
-#: machine-readable document here to stamp, and inventing one would be a second
-#: schema to keep for a reader nobody has asked for.
-HTML_ONLY = {"image", "photo"}
+#: `photo` is `image` under its old name, stamped as `image`.
+ALIASES = {"photo"}
 
 #: `mcp` answers an agent in JSON-RPC, a protocol with its own versioning, and
 #: takes no `--json`.
@@ -52,6 +52,7 @@ def elsewhere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def case(tmp_path: Path) -> Path:
     for name in ("a.txt", "b.txt"):
         (tmp_path / name).write_text(name, encoding="utf-8")
+    (tmp_path / "photo.jpg").write_bytes(_jpeg(b""))
     return tmp_path
 
 
@@ -62,11 +63,12 @@ def _arguments(name: str, case: Path) -> list[str]:
         "compare": [name, str(case / "a.txt"), str(case / "b.txt")],
         "doctor": [name],
         "clean": [name, str(case), "--out", str(case.parent / "cleaned")],
+        "image": [name, str(case / "photo.jpg")],
     }[name]
 
 
 #: Every command that can be asked for JSON, and how to ask it for some.
-DOCUMENTS = ("scan", "explain", "compare", "doctor", "clean")
+DOCUMENTS = ("scan", "explain", "compare", "doctor", "clean", "image")
 
 
 def _run(capsys, name: str, case: Path) -> dict:
@@ -132,8 +134,8 @@ def test_stamping_left_the_documents_otherwise_alone(case: Path, capsys):
 
 def test_every_command_that_can_emit_json_is_covered_here():
     """A new command must be stamped too, or say here why it has nothing to stamp."""
-    assert set(DOCUMENTS) | INTERACTIVE | HTML_ONLY | PROTOCOL == set(PARSERS), sorted(
-        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE - HTML_ONLY - PROTOCOL
+    assert set(DOCUMENTS) | INTERACTIVE | ALIASES | PROTOCOL == set(PARSERS), sorted(
+        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE - ALIASES - PROTOCOL
     )
 
 

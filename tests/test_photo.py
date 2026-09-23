@@ -192,3 +192,25 @@ def test_redaction_covers_the_text_a_jpeg_carries(tmp_path: Path):
     # Read at all, or the test proves nothing about hiding it.
     assert plain.jpeg.comments == (secret,)
     assert secret not in " ".join(hidden.jpeg.comments)
+
+
+def test_the_examination_as_json_carries_the_facts_and_no_pictures(tmp_path: Path, capsys):
+    import json
+
+    from filegrail.cli import main
+
+    photo = tmp_path / "camera.jpg"
+    photo.write_bytes(_photo_bytes(width=64, height=24))
+
+    assert main(["image", str(photo), "--json"]) == 0
+    examined = json.loads(capsys.readouterr().out)
+
+    (one,) = examined["photos"]
+    assert examined["schema"] == "filegrail.image/1"
+    assert examined["summary"]["conflicts"] + examined["summary"]["signals"] >= 1
+    assert {"JPEG dimensions", "Embedded preview"} <= {fact["label"] for fact in one["facts"]}
+    assert one["jpeg"]["markers"][0]["name"] == "SOI"
+    (pixels,) = [method for method in one["methods"] if method["name"] == "Pixel diagnostics"]
+    assert pixels["status"] == "not evaluated"
+    assert "images" in pixels["detail"]
+    assert '"data":' not in json.dumps(examined)

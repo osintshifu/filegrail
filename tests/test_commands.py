@@ -203,16 +203,14 @@ def test_photo_refuses_no_images_and_an_unsupported_single_file(tmp_path: Path, 
     assert "unsupported image" in capsys.readouterr().err
 
 
-def test_photo_requires_an_output_file(tmp_path: Path):
+def test_photo_requires_an_output_file_unless_it_prints_json(tmp_path: Path, capsys):
     from tests.photo import jpeg_with_exif
 
     photo = tmp_path / "camera.jpg"
     jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
 
-    with pytest.raises(SystemExit) as stopped:
-        main(["photo", str(photo)])
-
-    assert stopped.value.code == 2
+    assert main(["photo", str(photo)]) == 2
+    assert "--out" in capsys.readouterr().err
 
 
 def test_photo_redaction_omits_the_embedded_thumbnail(tmp_path: Path, capsys, monkeypatch):

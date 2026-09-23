@@ -988,6 +988,12 @@ filegrail image ./photos --out examination.html --case 2026/014 --examiner "J. N
 
 The report is one HTML file that loads no external assets and makes no network requests. Working images and diagnostic renderings go to a directory beside it, so a browser loads only what is on screen.
 
+`--json` gives the same examination as data, for scripts and other tools: every fact, conflict and review signal with the method behind it, the method coverage, the JPEG structure and the evidence records. Pictures and pixel diagnostics are not included.
+
+```bash
+filegrail image ./photos --json > examination.json
+```
+
 ### Report sections
 
 | Section | What it answers |
@@ -1251,6 +1257,7 @@ Each major command identifies its schema version.
 | `compare` | `filegrail.compare/2` |
 | `doctor` | `filegrail.doctor/1` |
 | `clean` | `filegrail.clean/1` |
+| `image` | `filegrail.image/1` |
 
 A schema version changes when the meaning or compatibility of the structured output changes, rather than for every implementation change.
 
@@ -1294,6 +1301,7 @@ claude mcp add filegrail -- filegrail mcp --root ~/case
 | `findings` | Findings across files, and the fields two sources state differently |
 | `pivots` | Identifiers from the scan, filtered by type or to those more than one file shares |
 | `neighbors` | The relationships of one file, identifier, author or device in the evidence graph, with their evidence |
+| `image` | The image examination of a photograph or a directory: JPEG structure, quality estimate, embedded previews, conflicts and review signals, without pictures |
 | `compare` | Two files side by side |
 
 - The server only reads. Nothing that writes files, including `clean`, is available to the agent.
