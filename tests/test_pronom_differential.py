@@ -110,8 +110,13 @@ def test_droid_names_every_file_as_this_project_does(tmp_path):
         text=True,
         check=True,
     )
+    # On its first run DROID writes its own set-up to the same stream, above
+    # the table.
+    lines = done.stdout.splitlines()
+    header = next((i for i, line in enumerate(lines) if line.startswith("FILE_PATH,")), None)
+    assert header is not None, done.stdout + done.stderr
     theirs: dict[str, set[str]] = {}
-    for row in csv.DictReader(io.StringIO(done.stdout)):
+    for row in csv.DictReader(io.StringIO("\n".join(lines[header:]))):
         if row["PUID"]:
             theirs.setdefault(Path(row["FILE_PATH"]).name, set()).add(row["PUID"])
 
