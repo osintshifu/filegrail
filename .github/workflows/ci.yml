@@ -100,6 +100,11 @@ jobs:
       # Format identification is held against DROID, The National Archives'
       # own reader of the registry, run on the signature files the package was
       # compiled from. The test checks those files by digest.
+      # DROID 6.9.14 is built for Java 21; the runner's default is older.
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
       - name: DROID and the PRONOM signature files
         run: |
           mkdir -p "$RUNNER_TEMP/droid" "$RUNNER_TEMP/pronom"
