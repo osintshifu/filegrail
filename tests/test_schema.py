@@ -29,6 +29,10 @@ INTERACTIVE = {"menu"}
 #: schema to keep for a reader nobody has asked for.
 HTML_ONLY = {"image", "photo"}
 
+#: `mcp` answers an agent in JSON-RPC, a protocol with its own versioning, and
+#: takes no `--json`.
+PROTOCOL = {"mcp"}
+
 
 @pytest.fixture(autouse=True)
 def elsewhere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -128,8 +132,8 @@ def test_stamping_left_the_documents_otherwise_alone(case: Path, capsys):
 
 def test_every_command_that_can_emit_json_is_covered_here():
     """A new command must be stamped too, or say here why it has nothing to stamp."""
-    assert set(DOCUMENTS) | INTERACTIVE | HTML_ONLY == set(PARSERS), sorted(
-        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE - HTML_ONLY
+    assert set(DOCUMENTS) | INTERACTIVE | HTML_ONLY | PROTOCOL == set(PARSERS), sorted(
+        set(PARSERS) - set(DOCUMENTS) - INTERACTIVE - HTML_ONLY - PROTOCOL
     )
 
 

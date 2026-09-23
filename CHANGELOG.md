@@ -18,6 +18,7 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Every scanned file is identified from its bytes by PRONOM PUID, name and version: `formats` in JSON, beside the type in the report and in `compare`.
 - Office, OpenDocument and EPUB files are named by what their ZIP or OLE2 container holds, so a `.docx` is `fmt/412` rather than a zip.
 - Identification is compared against DROID reading the same registry release in the differential job.
+- `filegrail mcp` serves scans to AI agents over the Model Context Protocol: read-only, limited to the given directories, without the user profile unless asked.
 
 ### Fixed
 

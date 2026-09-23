@@ -144,6 +144,23 @@ the images of an examination would let a finding in one open the other.
 The footer a Canon note ends with separates legitimate padding from a shifted note base. Reading
 it would recover the values that are currently skipped rather than risk inventing them.
 
+## Agent integration
+
+### MCP server
+
+Implemented. `filegrail mcp` runs a local Model Context Protocol server over standard input and output, so an AI agent can query a scan instead of reading the files itself. FileGrail stays deterministic: the agent reasons, FileGrail parses, identifies and correlates.
+
+- Tools: `scan` returns a summary and a scan identifier; `files`, `file`, `findings`, `pivots` and `neighbors` answer narrower questions about that scan, with filters and paging; `compare` sets two files side by side.
+- Read-only. Nothing that writes files, including `clean`, is exposed.
+- Limited to the directories given when the server starts.
+- Browser, shell and desktop history are read only when the server is started with `--profile`, because an agent usually sends what it receives to a remote model.
+- Values read from the examined files are marked as file content, never as instructions, and long values are shortened.
+- No runtime dependencies. A test holds the server against the official MCP client.
+
+### Image examination as JSON
+
+`filegrail image` writes an HTML report only. A JSON form of the same findings would let an agent, or any other program, use the image examination.
+
 ## Later
 
 ### Comparing two scans

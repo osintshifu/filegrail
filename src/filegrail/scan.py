@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Sized
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -41,6 +41,7 @@ from .sources import (
     read_trash,
     read_xmp,
 )
+from .sources.quarantine import Events
 from .util import Allowance, basename, birth_time, iso, sha256_file
 
 #: Directory names a scan does not descend into. They hold build output, caches
@@ -130,6 +131,40 @@ class ScanCoverage:
                 "beyond_budget": self.beyond_budget,
             },
         }
+
+
+#: The sources a scan reads from the user profile rather than from the files.
+_PROFILE_SOURCES = (
+    "browser-download",
+    "shell-history",
+    "recent-documents",
+    "macos-quarantine",
+    "windows-recent",
+    "sync-folder",
+)
+
+_UNREAD_PROFILE = SourceCoverage(DISABLED, detail="the user profile was not read")
+
+
+def _profile_coverage(
+    stats: dict[str, int], synced: Sized, use_shell_history: bool
+) -> dict[str, SourceCoverage]:
+    return {
+        "browser-download": _artifact_coverage(stats, "browser", records="browser_records"),
+        "shell-history": (
+            _artifact_coverage(stats, "shell")
+            if use_shell_history
+            else SourceCoverage(DISABLED, detail="disabled by --no-shell-history")
+        ),
+        "recent-documents": _artifact_coverage(stats, "recent"),
+        "macos-quarantine": _artifact_coverage(stats, "quarantine"),
+        "windows-recent": _artifact_coverage(stats, "windows_recent"),
+        "sync-folder": SourceCoverage(
+            SEARCHED if synced else UNAVAILABLE,
+            records=len(synced),
+            detail=None if synced else "no readable sync roots found",
+        ),
+    }
 
 
 def _artifact_coverage(
@@ -248,8 +283,12 @@ def scan(
     unsearched: Unsearched | None = None,
     coverage: ScanCoverage | None = None,
     carried_budget: int | None = CARRIED_BUDGET,
+    use_profile: bool = True,
 ) -> list[FileRecord]:
     """Build a FileRecord for every file under root.
+
+    `use_profile` False leaves the user profile unread - browser, shell and
+    desktop history - and reads only the files and what they carry.
 
     When `stats` is given it collects how much source material was available,
     which lets the caller explain a result of zero rather than leave the user
@@ -271,7 +310,7 @@ def scan(
         )
     )
 
-    downloads = collect_browser_downloads(home=home, stats=source_stats)
+    downloads = collect_browser_downloads(home=home, stats=source_stats) if use_profile else {}
     # Browsers record the path at download time; index by name too so a file
     # that was later moved into the case directory still resolves. The record
     # keeps the path as its own operating system spelled it, which is why the
@@ -282,13 +321,17 @@ def scan(
 
     history = (
         collect_shell_history({path.name for path in files}, home=home, stats=source_stats)
-        if use_shell_history
+        if use_shell_history and use_profile
         else {}
     )
-    recent = collect_recent_files(home=home, stats=source_stats)
-    quarantined = collect_quarantine_events(home=home, stats=source_stats)
-    shortcuts = collect_windows_recent(home=home, stats=source_stats)
-    synced = collect_sync_roots(home=home, stats=source_stats)
+    if use_profile:
+        recent = collect_recent_files(home=home, stats=source_stats)
+        quarantined = collect_quarantine_events(home=home, stats=source_stats)
+        shortcuts = collect_windows_recent(home=home, stats=source_stats)
+        synced = collect_sync_roots(home=home, stats=source_stats)
+    else:
+        recent, shortcuts, synced = {}, {}, []
+        quarantined = Events()
 
     records: list[FileRecord] = []
     for path in files:
@@ -376,23 +419,10 @@ def scan(
                 artifacts_found=len(files),
                 artifacts_read=len(records),
             ),
-            "browser-download": _artifact_coverage(
-                source_stats,
-                "browser",
-                records="browser_records",
-            ),
-            "shell-history": (
-                _artifact_coverage(source_stats, "shell")
-                if use_shell_history
-                else SourceCoverage(DISABLED, detail="disabled by --no-shell-history")
-            ),
-            "recent-documents": _artifact_coverage(source_stats, "recent"),
-            "macos-quarantine": _artifact_coverage(source_stats, "quarantine"),
-            "windows-recent": _artifact_coverage(source_stats, "windows_recent"),
-            "sync-folder": SourceCoverage(
-                SEARCHED if synced else UNAVAILABLE,
-                records=len(synced),
-                detail=None if synced else "no readable sync roots found",
+            **(
+                _profile_coverage(source_stats, synced, use_shell_history)
+                if use_profile
+                else dict.fromkeys(_PROFILE_SOURCES, _UNREAD_PROFILE)
             ),
             "torrent": torrent_coverage,
             "archives": SourceCoverage(

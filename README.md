@@ -1272,6 +1272,36 @@ Scan documents can contain:
 
 The scan configuration and coverage accompany exported graph data, so downstream consumers retain the conditions under which relationships were produced.
 
+### AI agents (MCP)
+
+`filegrail mcp` makes FileGrail available to AI agents and assistants that support the Model Context Protocol, such as Claude Code, Cursor or VS Code. The agent asks questions about a scan instead of opening the files itself, and receives only the part of the evidence it asked for.
+
+```bash
+filegrail mcp --root ~/case
+```
+
+In Claude Code:
+
+```bash
+claude mcp add filegrail -- filegrail mcp --root ~/case
+```
+
+| Tool | What the agent gets |
+| --- | --- |
+| `scan` | A summary of a file or directory: files, evidence found, findings, conflicts, pivots, formats and evidence coverage, with an identifier for the questions below |
+| `files` | The scanned files with their size, PRONOM format and kinds of evidence, filtered by evidence found or by format |
+| `file` | Every evidence record for one file, and how the records agree or conflict |
+| `findings` | Findings across files, and the fields two sources state differently |
+| `pivots` | Identifiers from the scan, filtered by type or to those more than one file shares |
+| `neighbors` | The relationships of one file, identifier, author or device in the evidence graph, with their evidence |
+| `compare` | Two files side by side |
+
+- The server only reads. Nothing that writes files, including `clean`, is available to the agent.
+- It reads only inside the directories given with `--root`, by default the current directory.
+- Browser, shell and desktop history are read only when the server is started with `--profile` or `--home`. An agent usually sends what it receives to a remote model.
+- Names, metadata values and identifiers are marked as content of the examined files, and values longer than 1000 characters are shortened. A metadata field written as an instruction reaches the agent as data.
+- FileGrail itself makes no network requests. Where the agent sends the results depends on the agent.
+
 ---
 
 ## Local-first operation

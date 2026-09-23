@@ -120,6 +120,12 @@ jobs:
           DROID: ${{ runner.temp }}/droid/droid.sh
           PRONOM_SOURCES: ${{ runner.temp }}/pronom
         run: pytest tests/test_pronom_differential.py
+      # The MCP server is written without the SDK, so the official client is
+      # the reference it is held against.
+      - name: MCP server against the official client
+        run: |
+          python -m pip install "mcp>=2,<3"
+          pytest tests/test_mcp.py
 
   types:
     runs-on: ubuntu-latest

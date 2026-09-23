@@ -48,7 +48,18 @@ if TYPE_CHECKING:  # only for the signatures; the scan brings the real thing
     from .identify import Identifier
     from .models import FileRecord
 
-COMMANDS = ("scan", "image", "photo", "explain", "compare", "doctor", "menu", "clean", "help")
+COMMANDS = (
+    "scan",
+    "image",
+    "photo",
+    "explain",
+    "compare",
+    "doctor",
+    "menu",
+    "clean",
+    "mcp",
+    "help",
+)
 
 
 # --- parsers -----------------------------------------------------------------
@@ -423,6 +434,38 @@ def _menu_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _mcp_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="filegrail mcp",
+        description=(
+            "Serve FileGrail to an AI agent over the Model Context Protocol, on standard "
+            "input and output. Read-only."
+        ),
+    )
+    parser.add_argument(
+        "--root",
+        action="append",
+        type=Path,
+        default=[],
+        metavar="DIR",
+        help="A directory the agent may examine; repeatable (default: the current directory).",
+    )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Also read browser, shell and desktop history. Off by default: an agent "
+        "usually sends what it receives to a remote model.",
+    )
+    parser.add_argument(
+        "--home",
+        type=Path,
+        metavar="DIR",
+        help="Read the history from this user profile instead of the current one. "
+        "Implies --profile.",
+    )
+    return parser
+
+
 PARSERS = {
     "scan": build_parser,
     "image": _image_parser,
@@ -432,6 +475,7 @@ PARSERS = {
     "doctor": _doctor_parser,
     "menu": _menu_parser,
     "clean": _clean_parser,
+    "mcp": _mcp_parser,
 }
 
 
@@ -466,7 +510,24 @@ def main(argv: list[str] | None = None) -> int:
         "doctor": _doctor,
         "menu": _menu,
         "clean": _clean,
+        "mcp": _mcp,
     }[command](rest)
+
+
+def _mcp(rest: list[str]) -> int:
+    from .mcp import Server, serve
+
+    args = _mcp_parser().parse_args(rest)
+    home = _home(args)
+    if isinstance(home, int):
+        return home
+    roots = args.root or [Path.cwd()]
+    for root in roots:
+        if not root.is_dir():
+            return _missing(root)
+    server = Server(roots, profile=args.profile or home is not None, home=home)
+    serve(server, sys.stdin.buffer, sys.stdout.buffer)
+    return 0
 
 
 def _help(rest: list[str]) -> int:
