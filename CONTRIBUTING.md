@@ -84,6 +84,18 @@ names none), its extensions in a family in `filters.py` so `--type` can select
 them, and a row in the README's embedded-metadata table. Each of these is held
 against the readers by a test, so a missed one fails rather than drifts.
 
+A reader arriving with a suffix set of its own also needs a specimen in
+`tests/specimens.py`: one minimal file carrying values nothing could decode by
+accident, and what has to come back. `tests/test_specimens.py` then writes it
+under every extension the reader claims and checks that each one reads. An
+extension added to a set that already has a specimen needs nothing: it is swept
+under that specimen and fails there if the reader cannot really read it.
+
+The same specimens are what `tools/build_corpus.py` writes out, with a manifest
+giving each file's expected block, expected values and digest. That corpus is
+how somebody outside the project checks these claims, and what a comparison
+against another tool is run over.
+
 Build the fixture the way a real encoder writes the file, not the way the
 specification reads. The two differ, and where they differ is where the bugs
 are: a HEIC names an `Exif` item in its item table long before the payload

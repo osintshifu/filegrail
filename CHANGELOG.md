@@ -13,6 +13,7 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - A file in that export is identified by its SHA-256 where one was taken and by where it was found otherwise, so an identifier claims no more than the evidence supports.
 - A `case` extra installs the official CASE validator, and a job of its own holds the export against CASE 1.5.0 on every commit.
 - Every kind of relationship declares what it claims, where the claim stops and which way it reads, and a kind that declares nothing cannot reach an export.
+- `tools/build_corpus.py` writes a validation corpus: one minimal file per format the project reads, under every extension it claims, with a manifest of what each one must produce.
 
 ### Fixed
 
