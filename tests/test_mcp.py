@@ -130,11 +130,51 @@ def test_a_scan_answers_narrower_questions_by_its_identifier(tmp_path):
     assert _call(server, "findings", scan="s99")["isError"]
 
 
-def test_the_official_client_can_use_the_server(tmp_path):
+def test_a_scan_searches_for_its_pivots_once(tmp_path, monkeypatch):
+    import filegrail.identify
+    import filegrail.report
+
+    (tmp_path / "notes.txt").write_text("write to ann@example.org")
+    searches = []
+    real = filegrail.identify.extract
+
+    def counted(*args, **kwargs):
+        searches.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(filegrail.identify, "extract", counted)
+    monkeypatch.setattr(filegrail.report, "extract", counted)
+
+    scanned = _call(Server([tmp_path]), "scan", path=str(tmp_path), pivots=True)
+
+    assert scanned["structuredContent"]["summary"]["pivots"] == 2
+    assert len(searches) == 1
+
+
+def test_a_request_without_a_handshake_names_a_version_this_server_speaks(tmp_path):
+    def asking(version: str, **meta) -> dict:
+        envelope = {"io.modelcontextprotocol/protocolVersion": version, **meta}
+        return Server([tmp_path]).handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": envelope}}
+        )
+
+    capabilities = {"io.modelcontextprotocol/clientCapabilities": {}}
+    served = asking("2026-07-28", **capabilities)
+    unknown = asking("2099-01-01", **capabilities)
+    bare = asking("2026-07-28")
+
+    assert served["result"]["resultType"] == "complete"
+    assert unknown["error"]["code"] == -32022
+    assert unknown["error"]["data"]["supported"] == ["2026-07-28"]
+    assert bare["error"]["code"] == -32602
+
+
+@pytest.mark.parametrize(("mode", "version"), [("auto", "2026-07-28"), ("legacy", "2025-11-25")])
+def test_the_official_client_can_use_the_server(tmp_path, mode, version):
     pytest.importorskip("mcp")
     import anyio
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+    from mcp import StdioServerParameters
+    from mcp.client.client import Client
 
     _ooxml(tmp_path / "report.docx")
     command = "from filegrail.cli import main; raise SystemExit(main())"
@@ -142,14 +182,18 @@ def test_the_official_client_can_use_the_server(tmp_path):
         command=sys.executable, args=["-c", command, "mcp", "--root", str(tmp_path)]
     )
 
-    async def session() -> tuple[list[str], dict]:
-        async with stdio_client(params) as (read, write), ClientSession(read, write) as client:
-            await client.initialize()
+    async def session() -> tuple[str, list[str], dict]:
+        async with Client(params, mode=mode) as client:
             listed = await client.list_tools()
             scanned = await client.call_tool("scan", {"path": str(tmp_path)})
-            return [tool.name for tool in listed.tools], scanned.structured_content
+            return (
+                client.protocol_version,
+                [t.name for t in listed.tools],
+                scanned.structured_content,
+            )
 
-    names, scanned = anyio.run(session)
+    spoken, names, scanned = anyio.run(session)
 
+    assert spoken == version
     assert names == ["scan", "files", "file", "findings", "pivots", "neighbors", "compare"]
     assert scanned["summary"]["formats"] == {"fmt/412": 1}

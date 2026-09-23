@@ -18,7 +18,9 @@ Every value a file supplied - a name, a metadata field, an identifier - is
 text somebody else wrote. The results say so, and shorten long values, so that
 a document whose author field reads like an instruction is shown as data.
 
-No SDK: the protocol is small, and the project keeps zero runtime
+Both generations of the protocol are spoken: the `initialize` handshake up to
+2025-11-25, and 2026-07-28, where there is no handshake and every request names
+its version. No SDK: the protocol is small, and the project keeps zero runtime
 dependencies. `tests/test_mcp.py` holds this against the official client.
 """
 
@@ -34,8 +36,23 @@ from typing import IO, Any
 
 from . import __version__
 
-#: Newest first. The client's version is answered in kind where it is known.
+#: Reached through `initialize`, newest first. The client's version is answered
+#: in kind where it is known.
 PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+
+#: Without a handshake: every request names its version in `_meta`, and
+#: `server/discover` says which are served.
+STATELESS_VERSIONS = ("2026-07-28",)
+
+VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
+CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities"
+SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo"
+
+#: Results a client may cache at 2026-07-28, which have to say for how long.
+CACHEABLE = ("server/discover", "tools/list")
+
+SERVER_INFO = {"name": "filegrail", "title": "FileGrail", "version": __version__}
+CAPABILITIES = {"tools": {"listChanged": False}}
 
 #: A string a file supplied is cut to this many characters.
 LONGEST_VALUE = 1000
@@ -62,6 +79,7 @@ PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
+UNSUPPORTED_VERSION = -32022
 
 
 class Refused(Exception):
@@ -259,14 +277,46 @@ class Server:
             return None  # a notification, `notifications/initialized` among them
         ident = message["id"]
         params = message.get("params") or {}
+        if not isinstance(params, dict):
+            return _error(ident, INVALID_PARAMS, "params must be an object")
+        meta = params.get("_meta")
+        stateless = isinstance(meta, dict) and VERSION_KEY in meta
+        if stateless or method == "server/discover":
+            refused = _envelope_refused(meta)
+            if refused is not None:
+                return {"jsonrpc": "2.0", "id": ident, "error": refused}
+        answer = self._answer(ident, method, params)
+        if (stateless or method == "server/discover") and "result" in answer:
+            # Required of every result at 2026-07-28, with who answered it.
+            stamped = {
+                **answer["result"],
+                "resultType": "complete",
+                "_meta": {SERVER_INFO_KEY: SERVER_INFO},
+            }
+            if method in CACHEABLE:
+                # Nothing here is to be kept or shared: a scan is one session's.
+                stamped.update(ttlMs=0, cacheScope="private")
+            answer["result"] = stamped
+        return answer
+
+    def _answer(self, ident: Any, method: Any, params: dict[str, Any]) -> dict[str, Any]:
         if method == "initialize":
             return _result(ident, self._initialize(params))
+        if method == "server/discover":
+            return _result(
+                ident,
+                {
+                    "supportedVersions": list(STATELESS_VERSIONS),
+                    "capabilities": CAPABILITIES,
+                    "instructions": INSTRUCTIONS,
+                },
+            )
         if method == "ping":
             return _result(ident, {})
         if method == "tools/list":
             return _result(ident, {"tools": TOOLS})
         if method == "tools/call":
-            name = params.get("name") if isinstance(params, dict) else None
+            name = params.get("name")
             if name not in self.handlers:
                 return _error(ident, INVALID_PARAMS, f"no tool named {name!r}")
             arguments = params.get("arguments") or {}
@@ -276,12 +326,12 @@ class Server:
         return _error(ident, METHOD_NOT_FOUND, f"no method {method!r}")
 
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
-        asked = params.get("protocolVersion") if isinstance(params, dict) else None
+        asked = params.get("protocolVersion")
         version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
         return {
             "protocolVersion": version,
-            "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "filegrail", "title": "FileGrail", "version": __version__},
+            "capabilities": CAPABILITIES,
+            "serverInfo": SERVER_INFO,
             "instructions": INSTRUCTIONS,
         }
 
@@ -349,6 +399,7 @@ class Server:
         pivots = arguments.get("pivots") is True
         records, coverage = self._run(root, hash_files=arguments.get("hash") is True)
         base = root if root.is_dir() else root.parent
+        found = extract(records, content=True, metadata=True) if pivots else None
         payload = json.loads(
             render_json(
                 records,
@@ -357,9 +408,9 @@ class Server:
                 content=pivots,
                 metadata=pivots,
                 coverage=coverage.to_dict(),
+                found=found,
             )
         )
-        found = extract(records, content=True, metadata=True) if pivots else None
         case = analyse(records, base, identifiers=found)
 
         self.counter += 1
@@ -480,6 +531,23 @@ class Server:
             records, _ = self._run(path, hash_files=False)
             sides.append(records[0])
         return {**json.loads(render_json_compare(*sides)), "untrusted": UNTRUSTED}
+
+
+def _envelope_refused(meta: Any) -> dict[str, Any] | None:
+    """Why a request without a handshake cannot be served, or None where it can."""
+    if not isinstance(meta, dict) or VERSION_KEY not in meta or CAPABILITIES_KEY not in meta:
+        return {
+            "code": INVALID_PARAMS,
+            "message": f"params._meta must carry {VERSION_KEY!r} and {CAPABILITIES_KEY!r}",
+        }
+    asked = meta[VERSION_KEY]
+    if asked not in STATELESS_VERSIONS:
+        return {
+            "code": UNSUPPORTED_VERSION,
+            "message": "Unsupported protocol version",
+            "data": {"supported": list(STATELESS_VERSIONS), "requested": asked},
+        }
+    return None
 
 
 def _result(ident: Any, result: dict[str, Any]) -> dict[str, Any]:

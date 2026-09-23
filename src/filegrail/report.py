@@ -1800,7 +1800,10 @@ def render_json(
     unsearched: Unsearched | None = None,
     run: dict[str, object] | None = None,
     coverage: dict[str, object] | None = None,
+    found: list[Identifier] | None = None,
 ) -> str:
+    """The scan as JSON. `found` is the scan's identifiers where the caller
+    already extracted them, so they are not searched for twice."""
     payload: dict[str, object] = {
         "root": str(root),
         **_whose(home),
@@ -1821,7 +1824,9 @@ def render_json(
     payload["unsearched"] = (unsearched or Unsearched()).to_dict()
     identifiers = []
     if identify:
-        identifiers = extract(records, content=content, metadata=metadata)
+        identifiers = (
+            found if found is not None else extract(records, content=content, metadata=metadata)
+        )
         payload["identifiers"] = [entry.to_dict() for entry in identifiers]
     if identify or any(
         record.sha256 or record.links or any(found.container for found in record.evidence)
