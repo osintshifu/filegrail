@@ -1,0 +1,122 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "filegrail"
+version = "1.0.0"
+description = "Trace file origins. Extract metadata. Find investigative pivots."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "osintshifu" }]
+keywords = [
+  "provenance",
+  "metadata",
+  "exif",
+  "gps",
+  "c2pa",
+  "content-credentials",
+  "osint",
+  "dfir",
+  "forensics",
+  "investigations",
+  "downloads",
+  "file-origin",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Legal Industry",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Topic :: System :: Filesystems",
+  "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2,<9", "ruff>=0.6,<1", "mypy>=1.11,<2"]
+image = ["Pillow>=10,<13", "numpy>=1.24,<3"]
+
+# Kept out of `dev` on purpose. `hypothesis` is the one thing in this repo whose
+# result depends on a seed rather than on the code, and the nine test jobs in
+# the matrix are there to answer "does this commit work", which is a question
+# that has to mean the same thing twice. The fuzzing gets its own job, where a
+# red run is a finding rather than a rerun.
+fuzz = ["hypothesis>=6,<7"]
+
+# Also kept out of `dev`, for a different reason. `case-utils` is the official
+# CASE validator and it brings rdflib, pySHACL and pandas with it - around
+# 200 MB to check one output format. It is the only thing that can say whether
+# what `--case-jsonld` writes is really CASE, so it runs in a job of its own,
+# and never at runtime.
+case = ["case-utils>=0.18,<1"]
+
+[project.urls]
+Homepage = "https://github.com/osintshifu/filegrail"
+Repository = "https://github.com/osintshifu/filegrail"
+Issues = "https://github.com/osintshifu/filegrail/issues"
+Changelog = "https://github.com/osintshifu/filegrail/blob/master/CHANGELOG.md"
+
+[project.scripts]
+filegrail = "filegrail.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/filegrail"]
+
+# A distribution is a list of what belongs in it, not a list of what to keep
+# out. A working directory that turns up in a checkout later cannot reach a
+# release by being forgotten.
+[tool.hatch.build.targets.sdist]
+only-include = [
+  ".editorconfig",
+  ".github",
+  ".gitignore",
+  ".pre-commit-config.yaml",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "README.md",
+  "ROADMAP.md",
+  "SECURITY.md",
+  "assets",
+  "docs",
+  "pyproject.toml",
+  "src/filegrail",
+  "tests",
+  "tools",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+# The annotations were already there; this is what makes them load-bearing.
+# Checked against the oldest supported interpreter, so a construct newer than
+# the floor is a failure here rather than a surprise for somebody on 3.10.
+[tool.mypy]
+python_version = "3.10"
+files = ["src/filegrail"]
+
+# `strict` rather than the list of flags that used to be here, on the same
+# principle: everything under it already passes, and a flag nothing satisfies is
+# a comment rather than a check. The list was what could be turned on while
+# forty-two annotations were missing; those are written, so the whole of strict
+# holds and there is no boundary left to describe.
+strict = true

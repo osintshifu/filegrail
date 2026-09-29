@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="716" viewBox="0 0 760 716" role="img" aria-label="How FileGrail works. A file is read for provenance (browser history, OS traces, shell history, archives, torrents), metadata (EXIF, XMP, C2PA, PDF, Office) and content (PDF text, Office, email, structured data). What is found becomes evidence, which gives pivots, conflicts and a timeline, then relationships and an evidence graph, delivered as a report, a CASE/UCO export or to AI agents over MCP." font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'DejaVu Sans Mono', monospace">
+<title>How FileGrail works. A file is read for provenance (browser history, OS traces, shell history, archives, torrents), metadata (EXIF, XMP, C2PA, PDF, Office) and content (PDF text, Office, email, structured data). What is found becomes evidence, which gives pivots, conflicts and a timeline, then relationships and an evidence graph, delivered as a report, a CASE/UCO export or to AI agents over MCP.</title>
+<defs><marker id="head" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#656c76"/></marker></defs>
+<rect x="0.5" y="0.5" width="759" height="715" rx="8" fill="#0d1117" stroke="#30363d"/>
+<rect x="300.0" y="28.0" width="160.0" height="40.0" rx="6" fill="#151b23" stroke="#b1bac4" stroke-width="1.5"/>
+<text x="380.0" y="53.0" font-size="15" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">FILE</text>
+<path d="M380.0,68.0 L380.0,112.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,88.0 L158.0,88.0 Q150.0,88.0 150.0,96.0 L150.0,112.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,88.0 L602.0,88.0 Q610.0,88.0 610.0,96.0 L610.0,112.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<circle cx="380.0" cy="88.0" r="3" fill="#656c76"/>
+<rect x="50.0" y="112.0" width="200.0" height="152.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<rect x="51.0" y="112.0" width="198.0" height="4" rx="2" fill="#5FA89A"/>
+<text x="150.0" y="140.0" font-size="14" fill="#5FA89A" text-anchor="middle" font-weight="700" letter-spacing="1">PROVENANCE</text>
+<text x="150.0" y="166.0" font-size="13" fill="#e6edf3" text-anchor="middle">Browser history</text>
+<text x="150.0" y="186.0" font-size="13" fill="#e6edf3" text-anchor="middle">OS traces</text>
+<text x="150.0" y="206.0" font-size="13" fill="#e6edf3" text-anchor="middle">Shell history</text>
+<text x="150.0" y="226.0" font-size="13" fill="#e6edf3" text-anchor="middle">Archives</text>
+<text x="150.0" y="246.0" font-size="13" fill="#e6edf3" text-anchor="middle">Torrents</text>
+<rect x="280.0" y="112.0" width="200.0" height="152.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<rect x="281.0" y="112.0" width="198.0" height="4" rx="2" fill="#A39BD9"/>
+<text x="380.0" y="140.0" font-size="14" fill="#A39BD9" text-anchor="middle" font-weight="700" letter-spacing="1">METADATA</text>
+<text x="380.0" y="166.0" font-size="13" fill="#e6edf3" text-anchor="middle">EXIF</text>
+<text x="380.0" y="186.0" font-size="13" fill="#e6edf3" text-anchor="middle">XMP</text>
+<text x="380.0" y="206.0" font-size="13" fill="#e6edf3" text-anchor="middle">C2PA</text>
+<text x="380.0" y="226.0" font-size="13" fill="#e6edf3" text-anchor="middle">PDF</text>
+<text x="380.0" y="246.0" font-size="13" fill="#e6edf3" text-anchor="middle">Office</text>
+<rect x="510.0" y="112.0" width="200.0" height="152.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<rect x="511.0" y="112.0" width="198.0" height="4" rx="2" fill="#7FA7D6"/>
+<text x="610.0" y="140.0" font-size="14" fill="#7FA7D6" text-anchor="middle" font-weight="700" letter-spacing="1">CONTENT</text>
+<text x="610.0" y="166.0" font-size="13" fill="#e6edf3" text-anchor="middle">PDF text</text>
+<text x="610.0" y="186.0" font-size="13" fill="#e6edf3" text-anchor="middle">Office</text>
+<text x="610.0" y="206.0" font-size="13" fill="#e6edf3" text-anchor="middle">Email</text>
+<text x="610.0" y="226.0" font-size="13" fill="#e6edf3" text-anchor="middle">Structured data</text>
+<path d="M380.0,264.0 L380.0,310.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M150.0,264.0 L150.0,278.0 Q150.0,286.0 158.0,286.0 L380.0,286.0" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<path d="M610.0,264.0 L610.0,278.0 Q610.0,286.0 602.0,286.0 L380.0,286.0" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<circle cx="380.0" cy="286.0" r="3" fill="#656c76"/>
+<rect x="270.0" y="310.0" width="220.0" height="40.0" rx="6" fill="#151b23" stroke="#b1bac4" stroke-width="1.5"/>
+<text x="380.0" y="335.0" font-size="15" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">EVIDENCE</text>
+<path d="M380.0,350.0 L380.0,394.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,370.0 L158.0,370.0 Q150.0,370.0 150.0,378.0 L150.0,394.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,370.0 L602.0,370.0 Q610.0,370.0 610.0,378.0 L610.0,394.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<circle cx="380.0" cy="370.0" r="3" fill="#656c76"/>
+<rect x="50.0" y="394.0" width="200.0" height="40.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="150.0" y="419.0" font-size="14" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">PIVOTS</text>
+<rect x="280.0" y="394.0" width="200.0" height="40.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="380.0" y="419.0" font-size="14" fill="#D08770" text-anchor="middle" font-weight="700" letter-spacing="1">CONFLICTS</text>
+<rect x="510.0" y="394.0" width="200.0" height="40.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="610.0" y="419.0" font-size="14" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">TIMELINE</text>
+<path d="M380.0,434.0 L380.0,480.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M150.0,434.0 L150.0,448.0 Q150.0,456.0 158.0,456.0 L380.0,456.0" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<path d="M610.0,434.0 L610.0,448.0 Q610.0,456.0 602.0,456.0 L380.0,456.0" fill="none" stroke="#656c76" stroke-width="1.5"/>
+<circle cx="380.0" cy="456.0" r="3" fill="#656c76"/>
+<rect x="270.0" y="480.0" width="220.0" height="40.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="380.0" y="505.0" font-size="15" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">RELATIONSHIPS</text>
+<path d="M380.0,520.0 L380.0,548.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<rect x="270.0" y="548.0" width="220.0" height="40.0" rx="6" fill="#151b23" stroke="#b1bac4" stroke-width="1.5"/>
+<text x="380.0" y="573.0" font-size="15" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">EVIDENCE GRAPH</text>
+<path d="M380.0,588.0 L380.0,632.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,608.0 L158.0,608.0 Q150.0,608.0 150.0,616.0 L150.0,632.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<path d="M380.0,608.0 L602.0,608.0 Q610.0,608.0 610.0,616.0 L610.0,632.0" fill="none" stroke="#656c76" stroke-width="1.5" marker-end="url(#head)"/>
+<circle cx="380.0" cy="608.0" r="3" fill="#656c76"/>
+<rect x="50.0" y="632.0" width="200.0" height="56.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="150.0" y="657.0" font-size="14" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">REPORT</text>
+<text x="150.0" y="675.0" font-size="12" fill="#9198a1" text-anchor="middle">terminal · HTML</text>
+<rect x="280.0" y="632.0" width="200.0" height="56.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="380.0" y="657.0" font-size="14" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">CASE/UCO</text>
+<text x="380.0" y="675.0" font-size="12" fill="#9198a1" text-anchor="middle">JSON-LD export</text>
+<rect x="510.0" y="632.0" width="200.0" height="56.0" rx="6" fill="#151b23" stroke="#3d444d" stroke-width="1.0"/>
+<text x="610.0" y="657.0" font-size="14" fill="#e6edf3" text-anchor="middle" font-weight="700" letter-spacing="1">MCP</text>
+<text x="610.0" y="675.0" font-size="12" fill="#9198a1" text-anchor="middle">AI agents</text>
+</svg>

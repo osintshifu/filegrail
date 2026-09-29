@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+.venv/
+.venv*/
+venv/
+.vscode/
+.idea/
+.DS_Store
+.coverage
+htmlcov/
+
+# Local sample files for manual runs - never commit real documents
+test-data/

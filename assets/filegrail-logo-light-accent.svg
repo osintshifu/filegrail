@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 345 72" width="345" height="72">
+  <g transform="translate(1.5,4) scale(0.31373)"><path fill="#5FA89A" stroke="#2C343A" stroke-width="4" paint-order="stroke" fill-rule="evenodd" d="M24,48 A48,48 0 0 1 72,0 H108 V24 H72 A24,24 0 0 0 48,48 V72 H144 V96 A60,60 0 0 1 96,154.79 V180 H132 V204 H36 V180 H72 V154.79 A60,60 0 0 1 24,96 H0 V72 H24 Z M48,96 H120 A36,36 0 0 1 48,96 Z"></path></g>
+  <defs><clipPath id="fcutha"><rect x="54.88" y="-3.96" width="64.80" height="59.40"></rect></clipPath></defs>
+  <text x="65.68" y="55.44" font-family="'DM Mono',ui-monospace,Menlo,Consolas,monospace" font-size="54" font-weight="500" fill="#2C343A" clip-path="url(#fcutha)">f</text>
+  <rect x="69.41" y="49.72" width="21.60" height="5.72" fill="#2C343A"></rect>
+  <text x="96.58" y="55.44" font-family="'DM Mono',ui-monospace,Menlo,Consolas,monospace" font-size="54" font-weight="500" letter-spacing="-1.5" fill="#2C343A">ilegrail</text>
+</svg>
