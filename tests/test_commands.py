@@ -31,7 +31,25 @@ def test_a_bare_path_still_scans(tmp_path: Path, capsys):
 
     assert main([str(tmp_path), "--no-color"]) == 0
 
-    assert "FILE" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "FILE" in output
+    hint = output.rstrip().splitlines()[-1]
+    assert hint.startswith("HTML report: filegrail scan -o report.html ")
+    assert str(tmp_path) in hint
+    assert hint.endswith(" --no-color")
+
+
+def test_html_hint_preserves_scan_options_for_a_single_file(tmp_path: Path, capsys):
+    source = tmp_path / "source with spaces.txt"
+    source.write_text("evidence", encoding="utf-8")
+
+    assert main([str(source), "--redact", "--home", str(tmp_path), "--no-color"]) == 0
+
+    output = capsys.readouterr().out
+    assert "HTML report: filegrail scan -o report.html" in output
+    assert "--redact" in output.split("HTML report: ", 1)[1]
+    assert "--home" in output.split("HTML report: ", 1)[1]
+    assert str(source) in output.split("HTML report: ", 1)[1]
 
 
 def test_scan_can_be_named_explicitly(tmp_path: Path, capsys):
@@ -45,8 +63,11 @@ def test_scan_can_be_named_explicitly(tmp_path: Path, capsys):
 def test_html_is_printed_like_json_and_never_alongside_it(tmp_path: Path, capsys):
     (tmp_path / "a.txt").write_text("a", encoding="utf-8")
 
-    assert main([str(tmp_path), "--html"]) == 0
-    assert capsys.readouterr().out.startswith("<!doctype html>")
+    assert main([str(tmp_path), "--html", "--home", str(tmp_path)]) == 0
+    printed = capsys.readouterr()
+    assert printed.out.startswith("<!doctype html>")
+    assert "HTML report:" not in printed.out
+    assert printed.err == ""
     assert main([str(tmp_path), "--html", "--json"]) == 2
 
 
@@ -66,20 +87,73 @@ def test_graph_export_can_be_written_to_a_file(tmp_path: Path, capsys):
 
     assert main([str(tmp_path), "--graphml", "--content", "-o", str(out)]) == 0
 
-    assert capsys.readouterr().out == ""
+    notice = capsys.readouterr()
+    assert notice.out == ""
+    assert notice.err == f"GraphML report saved to {out.resolve()} (1 file)\n"
     assert ElementTree.fromstring(out.read_text(encoding="utf-8")).tag.endswith("graphml")
+
+
+def test_graph_csv_names_its_companion_file_without_scanning_prior_outputs(tmp_path: Path, capsys):
+    (tmp_path / "author.txt").write_text("analyst@example.org", encoding="utf-8")
+    out = tmp_path / "graph.csv"
+    beside = tmp_path / "graph.csv.meta.json"
+
+    for _ in range(2):
+        assert main([str(tmp_path), "--graph-csv", "--content", "-o", str(out)]) == 0
+        notice = capsys.readouterr()
+        assert notice.out == ""
+        assert notice.err == (
+            f"Graph CSV saved to {out.resolve()} (1 file)\n"
+            f"Graph metadata saved to {beside.resolve()}\n"
+        )
+    assert out.is_file() and beside.is_file()
 
 
 def test_the_report_can_be_written_to_a_file_it_then_names(tmp_path: Path, capsys):
     (tmp_path / "a.txt").write_text("a", encoding="utf-8")
-    out = tmp_path / "report.html"
+    out = tmp_path / "raport końcowy.html"
+    command = [str(tmp_path), "-o", str(out), "--home", str(tmp_path)]
 
-    assert main([str(tmp_path), "--html", "-o", str(out)]) == 0
+    assert main(command) == 0
 
-    assert capsys.readouterr().out == ""
+    first = capsys.readouterr()
+    assert "SUMMARY" in first.out and "FILES" in first.out
+    assert "END OF REPORT" in first.out
+    assert "HTML report:" not in first.out
+    assert "<!doctype html>" not in first.out
+    assert first.err == (
+        f"HTML report saved to {out.resolve()} (1 file)\nOpen HTML: {out.resolve().as_uri()}\n"
+    )
     page = out.read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>")
     assert str(out.resolve()) in page
+
+    assert main([*command, "--html"]) == 0
+    second = capsys.readouterr()
+    assert "END OF REPORT" in second.out
+    assert second.err == first.err
+
+
+def test_html_write_failure_prints_no_terminal_report_or_link(tmp_path: Path, capsys):
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    out = tmp_path / "missing" / "report.html"
+
+    assert main([str(tmp_path), "--html", "-o", str(out), "--home", str(tmp_path)]) == 2
+
+    failure = capsys.readouterr()
+    assert failure.out == ""
+    assert "cannot write" in failure.err
+    assert "Open HTML:" not in failure.err
+
+
+def test_output_cannot_replace_the_file_being_scanned(tmp_path: Path, capsys):
+    source = tmp_path / "source.txt"
+    source.write_text("evidence", encoding="utf-8")
+
+    assert main([str(source), "--html", "-o", str(source)]) == 2
+
+    assert source.read_text(encoding="utf-8") == "evidence"
+    assert "output file cannot be the scanned file" in capsys.readouterr().err
 
 
 def test_help_lists_a_command(capsys):
@@ -110,7 +184,9 @@ def test_photo_writes_a_self_contained_report_atomically(tmp_path: Path, capsys,
     arguments = ["--case", "2026/014", "--examiner", "J. Nowak"]
     assert main(["image", str(photo), "--out", str(report), *arguments]) == 0
 
-    assert capsys.readouterr().out == ""
+    notice = capsys.readouterr()
+    assert notice.out == ""
+    assert f"HTML report saved to {report.resolve()} (1 image)" in notice.err
     page = report.read_text(encoding="utf-8")
     assert page.startswith("<!doctype html>")
     assert "<dt>Case</dt><dd>2026/014</dd>" in page

@@ -1201,7 +1201,12 @@ def _pivots(case: Case, files: dict[str, CaseFile], identifiers: list[Identifier
         panels.append(("pivots-across", "Across files", len(across), table))
     if pivots.dense:
         panels.append(
-            ("pivots-dense", "High-density files", len(pivots.dense), _dense(pivots, files))
+            (
+                "pivots-dense",
+                "Files with most pivot occurrences",
+                len(pivots.dense),
+                _dense(pivots, files),
+            )
         )
     for kind, count in pivots.by_type:
         table = _pivot_table(kinds[kind], files, refs, across=False)

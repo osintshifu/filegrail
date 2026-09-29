@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -143,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--html",
         action="store_true",
-        help="Print the report as one self-contained HTML page, to redirect to a file.",
+        help="Use a self-contained HTML page; without --out, print HTML to standard output.",
     )
     parser.add_argument(
         "--graphml",
@@ -168,7 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
         dest="out",
         type=Path,
         metavar="FILE",
-        help="Write the report to this file instead of standard output.",
+        help="Write the report to this file. A .html filename selects HTML unless "
+        "another output format is specified.",
     )
     parser.add_argument(
         "--brief",
@@ -572,6 +575,12 @@ def _home(args: argparse.Namespace) -> Path | None | int:
 
 def _scan(rest: list[str]) -> int:
     args = build_parser().parse_args(rest)
+    if (
+        args.out
+        and args.out.suffix.lower() == ".html"
+        and not any((args.json, args.graphml, args.graph_csv, args.case_jsonld, args.timeline))
+    ):
+        args.html = True
     outputs = [
         args.json,
         args.html,
@@ -590,6 +599,10 @@ def _scan(rest: list[str]) -> int:
     root = args.path.resolve()
     if not root.exists():
         return _missing(args.path)
+    written = args.out.resolve() if args.out else None
+    if root.is_file() and written == root:
+        print("filegrail: output file cannot be the scanned file", file=sys.stderr)
+        return 2
 
     home = _home(args)
     if isinstance(home, int):
@@ -604,6 +617,9 @@ def _scan(rest: list[str]) -> int:
     stats: dict[str, int] = {}
     missed = Unsearched()
     coverage = ScanCoverage()
+    excluded = {written} if written is not None else set()
+    if args.graph_csv and written is not None:
+        excluded.add(written.with_name(written.name + ".meta.json"))
     records = scan(
         root,
         recursive=not args.no_recurse,
@@ -616,6 +632,7 @@ def _scan(rest: list[str]) -> int:
         skip_names=not args.no_skip,
         unsearched=missed,
         coverage=coverage,
+        exclude_paths=excluded,
     )
 
     if args.unknown_only:
@@ -676,8 +693,8 @@ def _scan(rest: list[str]) -> int:
         },
     }
     coverage_document = coverage.to_dict()
+    terminal_report: str | None = None
 
-    written = args.out.resolve() if args.out else None
     if args.json:
         report = render_json(
             records,
@@ -736,6 +753,20 @@ def _scan(rest: list[str]) -> int:
             redacted=args.redact,
             output=written,
         )
+        if written is not None and root.is_dir():
+            terminal_report = render_case(
+                case,
+                theme=theme,
+                verbose=args.verbose,
+                brief=args.brief,
+                limit=_limit(args),
+                identifiers=found,
+                content=content,
+                cluster=args.cluster,
+                home=home,
+                unsearched=missed,
+                filtered=describe(args.families, args.extensions),
+            )
     elif args.timeline:
         report = render_timeline(records, base, theme=theme, home=home)
     elif root.is_dir():
@@ -770,11 +801,36 @@ def _scan(rest: list[str]) -> int:
             home=home,
             unsearched=missed,
         )
-    return _emit(
+    if output_format == "text" and written is None:
+        command = ["filegrail", "scan", "-o", "report.html", *rest]
+        quoted = subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+        report += f"\n\nHTML report: {quoted}"
+    result = _emit(
         report,
         written,
         exact=args.json or args.graphml or args.graph_csv or args.case_jsonld or args.html,
     )
+    if result == 0 and terminal_report is not None:
+        result = _emit(terminal_report, None)
+    if result == 0 and written is not None:
+        labels = {
+            "json": "JSON report",
+            "graphml": "GraphML report",
+            "graph-csv": "Graph CSV",
+            "case-jsonld": "CASE/UCO JSON-LD report",
+            "html": "HTML report",
+            "timeline": "Timeline report",
+            "text": "Text report",
+        }
+        _saved_report(written, labels[output_format], len(records), "file")
+        if args.html:
+            print(f"Open HTML: {written.as_uri()}", file=sys.stderr)
+        if args.graph_csv:
+            print(
+                f"Graph metadata saved to {written.with_name(written.name + '.meta.json')}",
+                file=sys.stderr,
+            )
+    return result
 
 
 def _image(rest: list[str]) -> int:
@@ -824,7 +880,10 @@ def _image(rest: list[str]) -> int:
         report = render_photo_html(
             collection, output=output, case=args.case, examiner=args.examiner
         )
-        return _emit_atomic(report, output)
+        result = _emit_atomic(report, output)
+        if result == 0:
+            _saved_report(output, "HTML report", len(collection.photos), "image")
+        return result
 
     assert staging is not None and backup is not None
     try:
@@ -841,7 +900,7 @@ def _image(rest: list[str]) -> int:
         _remove_path(staging)
         print(f"filegrail: cannot write {images}: {error}", file=sys.stderr)
         return 2
-    return _emit_photo_bundle(
+    result = _emit_photo_bundle(
         report,
         output,
         assets=images,
@@ -849,6 +908,11 @@ def _image(rest: list[str]) -> int:
         backup=backup,
         keep_assets=not args.redact,
     )
+    if result == 0:
+        _saved_report(output, "HTML report", len(collection.photos), "image")
+        if not args.redact:
+            print(f"Working images saved to {images}", file=sys.stderr)
+    return result
 
 
 def _image_json(args: argparse.Namespace, root: Path) -> int:
@@ -869,6 +933,11 @@ def _image_json(args: argparse.Namespace, root: Path) -> int:
         print(f"filegrail: no supported images found in {args.path}", file=sys.stderr)
         return 2
     return _emit(document("image", collection_to_dict(collection)), written, exact=True)
+
+
+def _saved_report(path: Path, label: str, count: int, item: str) -> None:
+    unit = item if count == 1 else f"{item}s"
+    print(f"{label} saved to {path} ({count} {unit})", file=sys.stderr)
 
 
 def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:

@@ -1,32 +1,23 @@
-"""The investigation report: a case read in the order an analyst asks about it.
+"""Terminal case report with findings as trees and files as a compact table.
 
-What was analysed, what the records establish together, which files to open,
-which values lead somewhere else and the detail of the files that need it -
-and then what this machine could be searched for and what contradicts itself.
-
-Every object starts on a line of its own with a mark and a number, so the left
-edge alone says where one ends and the next begins, and no name is ever broken
-inside a table column. The numbers are local to one report and are how its
-sections point at each other: `#001` a file, `F01` a finding, `C01` a conflict,
-`P01` a pivot.
-
-Nothing here decides what is true. It lays out an `analysis.Case`.
+Local references connect the sections: `#001` a file, `F01` a finding,
+`C01` a conflict and `P01` a pivot. Nothing here decides what is true;
+the renderer lays out an `analysis.Case`.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from . import __version__
-from .analysis import NOTHING, REVIEW, Case, CaseFile, Finding, named, stamp
-from .graph import build_graph
+from .analysis import NOTHING, REVIEW, Case, CaseFile, Conflict, Finding, named, stamp
 from .identify import PLACE, Identifier
 from .models import ACTIVITY, CATEGORIES, METADATA, ORIGIN, EvidenceRecord, FileRecord, category
 from .overview import inventory
 from .report import (
     _TYPE_SECTIONS,
-    _blank,
     _clusters,
     _display,
     _format,
@@ -36,15 +27,13 @@ from .report import (
     named_formats,
 )
 from .scan import Unsearched
-from .theme import BOTH_WAYS, DOUBLE_RULE, FLAG, FULL, HALF, MIDDOT, RING, RULE, Theme, detect
+from .theme import BRANCH, DOUBLE_RULE, FLAG, LAST, MIDDOT, RAIL, RULE, Theme, detect
 
 #: Where a property's value starts, measured from its label.
 LABEL = 12
 
-#: How many files a finding names before it says how many more there are.
 SHOWN = 4
 
-#: Findings that name files one by one, and how many of them; None is all.
 _LISTED: dict[str, int | None] = {
     "generated": None,
     "conflicts": None,
@@ -52,9 +41,6 @@ _LISTED: dict[str, int | None] = {
     "geo": SHOWN,
 }
 
-#: Findings whose items carry facts of their own. They are printed under each
-#: file rather than once for the finding, because they are what that file in
-#: particular was found to say.
 _PER_FILE = frozenset({"generated", "signature"})
 
 #: What each match basis means, for the ones a report actually uses.
@@ -186,6 +172,37 @@ class _Page:
     def double(self) -> None:
         self.add(self.theme.dim(self.theme.glyph(DOUBLE_RULE) * self.width))
 
+    def tree(self, parents: tuple[bool, ...], last: bool, value: str, *, indent: int = 2) -> None:
+        rail = self.theme.glyph(RAIL)
+        stem = " " * indent + "".join("    " if ended else f"{rail}   " for ended in parents)
+        branch = self.theme.glyph(LAST if last else BRANCH) + self.theme.glyph(RULE) * 2 + " "
+        opening = stem + branch
+        # Wrapped URLs and identifiers must remain copyable without tree glyphs
+        # inserted into their value when whitespace is joined back together.
+        continuation = " " * len(opening)
+        for number, line in enumerate(self.theme.wrap(value, self.width - len(opening))):
+            self.add((opening if number == 0 else continuation) + line)
+
+
+@dataclass(slots=True)
+class _Node:
+    text: str
+    children: list[_Node] = field(default_factory=list)
+
+
+def _tree(
+    page: _Page,
+    nodes: list[_Node],
+    parents: tuple[bool, ...] = (),
+    *,
+    indent: int = 2,
+) -> None:
+    for index, node in enumerate(nodes):
+        last = index == len(nodes) - 1
+        page.tree(parents, last, node.text, indent=indent)
+        if node.children:
+            _tree(page, node.children, (*parents, last), indent=indent)
+
 
 def render_case(
     case: Case,
@@ -208,9 +225,9 @@ def render_case(
     records = [entry.record for entry in case.files]
 
     moment = _masthead(page, case, home, now, brief=brief, verbose=verbose)
-    _summary(page, case, records, identifiers)
+    _summary(page, case, records)
     _findings(page, case, files)
-    _files(page, case, verbose=verbose, limit=limit, compact=brief)
+    _files(page, case, limit=limit)
     if not brief:
         _relationships(page, case, files)
         if cluster:
@@ -218,7 +235,6 @@ def render_case(
         _pivots(page, case, files, verbose=verbose, identifiers=identifiers, content=content)
         _details(page, case, files, verbose=verbose)
         _coverage(page, case, unsearched)
-        _conflicts(page, case, files)
         _notes(page, records)
     if filtered:
         page.gap()
@@ -242,22 +258,8 @@ def render_case(
     return "\n".join(page.lines)
 
 
-def _mark(page: _Page, entry: CaseFile) -> str:
-    if entry.state == REVIEW:
-        return page.theme.glyph(FLAG)
-    if entry.state == NOTHING:
-        return page.theme.glyph(MIDDOT)
-    return " "
-
-
 def _name(entry: CaseFile) -> str:
     return Path(entry.record.path).name
-
-
-def _folder(case: Case, record: FileRecord) -> str | None:
-    """Where under the target a file lies, or None when it lies in the target itself."""
-    relative = Path(_relative(record.path, case.root))
-    return str(relative) if relative.parent != Path(".") else None
 
 
 #: The mark in half blocks, five lines high: a cup on its stem. Painted in the
@@ -314,9 +316,7 @@ def _masthead(
     return moment
 
 
-def _summary(
-    page: _Page, case: Case, records: list[FileRecord], identifiers: list[Identifier] | None
-) -> None:
+def _summary(page: _Page, case: Case, records: list[FileRecord]) -> None:
     """The figures the HTML report opens with, in the same order, one line each."""
     theme = page.theme
     contents = inventory(records)
@@ -325,7 +325,6 @@ def _summary(
     review = [entry for entry in case.files if entry.state == REVIEW]
     quiet = [entry for entry in case.files if entry.state == NOTHING]
     fields = sum(len(conflict.differences) for conflict in case.conflicts)
-    edges = len(build_graph(records, identifiers or []).relationships)
 
     rows: list[tuple[str, str, str]] = [
         (
@@ -344,14 +343,20 @@ def _summary(
         if case.pivots.cross_corpus:
             said += f" {dot} {case.pivots.cross_corpus:,} in both corpora"
         rows.append(("Pivots", f"{case.pivots.total:,}", said))
-    if edges:
-        rows.append(("Relationships", f"{edges:,}", "evidence-backed graph edges"))
     if review:
         said = f"{len(case.conflicts)} conflicts {dot} {fields} fields" if case.conflicts else ""
         rows.append((f"{flag} Need review", f"{len(review):,}", said))
+    declared = {
+        item.path
+        for finding in case.findings
+        if finding.kind == "generated"
+        for item in finding.items
+    }
+    if declared:
+        rows.append(("Declared AI source", f"{len(declared):,}", "signature not verified"))
     if quiet:
         rows.append(
-            ("No evidence found", f"{len(quiet):,}", "see coverage before reading as absence")
+            ("No evidence found", f"{len(quiet):,}", "absence is not proof; see report notes")
         )
     stores = [source for source in case.coverage if source.store]
     if stores:
@@ -375,59 +380,73 @@ def _findings(page: _Page, case: Case, files: dict[str, CaseFile]) -> None:
     page.section("KEY FINDINGS")
     for finding in case.findings:
         mark = page.theme.glyph(FLAG if finding.notable else MIDDOT)
-        indent = page.head(mark, finding.ref, finding.title)
-        page.add()
-        facts = finding.facts
-        if finding.kind in _PER_FILE:
-            facts = [fact for fact in facts if fact[0] != "files"]
-        labels = [label for label, _ in facts]
-        labels += [label for item in finding.items for label, _ in item.facts]
-        width = _width(labels)
-        for label, value in facts:
-            page.prop(_capital(label), value, indent, width)
-        _items(page, case, finding, files, indent, width)
-        if finding.kind == "no-trace":
-            page.add()
-            page.wrapped(
-                "This does not mean the files were never downloaded or transferred.", indent
-            )
-            if case.begins:
-                page.wrapped(f"Available trace history begins on {case.begins}.", indent)
-        if finding.see:
-            page.add()
-            page.prop("See", finding.see, indent, width)
+        title = finding.title
+        if finding.kind in {"generated", "signature", "conflicts", "geo"}:
+            unit = "file" if len(finding.items) == 1 else "files"
+            title += f" · {len(finding.items)} {unit}"
+        page.head(mark, finding.ref, title)
+        _tree(page, _finding_nodes(case, finding, files))
         page.gap()
 
 
-def _items(
-    page: _Page,
-    case: Case,
-    finding: Finding,
-    files: dict[str, CaseFile],
-    indent: int,
-    width: int,
-) -> None:
-    if finding.kind in _PER_FILE:
+def _conflict_nodes(conflict: Conflict) -> list[_Node]:
+    nodes = []
+    for difference in conflict.differences:
+        values = [_Node(f"{source or 'Value'}  {value}") for source, value in difference.values]
+        if difference.delta:
+            first = difference.values[0][0] or "the first"
+            second = difference.values[-1][0] or "the second"
+            values.append(_Node(f"Difference  {second} is {difference.delta} than {first}"))
+        nodes.append(_Node(difference.field, values))
+    return nodes
+
+
+def _finding_nodes(case: Case, finding: Finding, files: dict[str, CaseFile]) -> list[_Node]:
+    if finding.kind == "conflicts":
+        return [
+            _Node(
+                f"{files[conflict.path].ref}  {_name(files[conflict.path])}",
+                _conflict_nodes(conflict),
+            )
+            for conflict in case.conflicts
+        ]
+    if finding.kind in {"generated", "signature"}:
+        return [
+            _Node(
+                f"{files[item.path].ref}  {_name(files[item.path])}",
+                [_Node(f"{_capital(label)}  {value}") for label, value in item.facts],
+            )
+            for item in finding.items
+        ]
+    facts = [
+        _Node(f"{_capital(label)}  {value}")
+        for label, value in finding.facts
+        if label != "files" or finding.kind == "no-trace"
+    ]
+    if finding.kind == "geo":
         for item in finding.items:
             entry = files[item.path]
-            opening = " " * indent + "File".ljust(width) + f"{entry.ref}  "
-            page.wrapped(_name(entry), len(opening), opening)
-            for label, value in item.facts:
-                page.prop(_capital(label), value, indent, width)
-        return
-    if finding.kind not in _LISTED:
-        return
-    most = _LISTED[finding.kind]
-    shown = finding.items if most is None else finding.items[:most]
-    page.add()
-    for item in shown:
-        entry = files[item.path]
-        opening = " " * indent + f"{entry.ref}  "
-        page.wrapped(_name(entry), len(opening), opening)
-        if (folder := _folder(case, entry.record)) and finding.kind != "conflicts":
-            page.prop("path", folder, len(opening), width=6)
-    if len(finding.items) > len(shown):
-        page.add(" " * indent + f"+{len(finding.items) - len(shown)} more")
+            coordinates = ", ".join(
+                dict.fromkeys(found.geo for found in entry.record.evidence if found.geo)
+            )
+            facts.append(_Node(f"{entry.ref}  {_name(entry)}  {coordinates}"))
+        return facts
+    if finding.kind in {"author", "camera", "lens"} and len(finding.items) > 6:
+        refs = " ".join(files[item.path].ref for item in finding.items)
+        facts.append(_Node(f"Files  {refs}"))
+    elif finding.kind != "no-trace":
+        facts.append(
+            _Node(
+                f"Files ({len(finding.items)})",
+                [
+                    _Node(f"{files[item.path].ref}  {_name(files[item.path])}")
+                    for item in finding.items
+                ],
+            )
+        )
+    if finding.see:
+        facts.append(_Node(f"See  {finding.see}"))
+    return facts
 
 
 def _coverage(page: _Page, case: Case, unsearched: Unsearched | None) -> None:
@@ -436,143 +455,127 @@ def _coverage(page: _Page, case: Case, unsearched: Unsearched | None) -> None:
     if not case.coverage and not missed:
         return
     page.section("EVIDENCE COVERAGE")
-    theme = page.theme
-    for source in case.coverage:
-        if source.state in ("found", "readable"):
-            mark = theme.paint(theme.glyph(FULL), "origin")
-        elif source.state == "partial":
-            mark = theme.paint(theme.glyph(HALF), "activity")
-        else:
-            mark = theme.dim(theme.glyph(RING))
-        indent = page.head(mark, "", source.name)
-        page.prop("Status", source.state, indent)
-        if source.detail:
-            page.prop("Detail", source.detail, indent)
-        if source.since:
-            page.prop("Since", source.since, indent)
-        page.gap()
-    for path, why in missed:
-        indent = page.head(theme.dim(theme.glyph(RING)), "", _relative(path, case.root))
-        page.prop("Status", why, indent)
-        page.gap()
     if case.coverage:
-        page.add("NOTE")
+        source_width = min(32, max(16, page.width // 3))
+        status_width = 13
+        detail_width = page.width - source_width - status_width - 4
+        header = f"{'SOURCE':<{source_width}}  {'STATUS':<{status_width}}  DETAIL"
+        page.add(page.theme.label(header))
+        page.add(page.theme.rule())
+        for source in case.coverage:
+            detail = source.detail
+            if source.since:
+                detail = f"{detail}; since {source.since}" if detail else f"since {source.since}"
+            columns = [
+                page.theme.wrap(source.name, source_width),
+                page.theme.wrap(source.state, status_width),
+                page.theme.wrap(detail or "", detail_width),
+            ]
+            for row in range(max(map(len, columns))):
+                page.add(
+                    f"{columns[0][row] if row < len(columns[0]) else '':<{source_width}}  "
+                    f"{columns[1][row] if row < len(columns[1]) else '':<{status_width}}  "
+                    f"{columns[2][row] if row < len(columns[2]) else ''}"
+                )
+    if missed:
         page.add()
-        if case.begins:
-            page.wrapped(f"Observable trace history begins on {case.begins}.", 4)
-        page.wrapped(
-            "Absence of origin evidence is not proof that a file was never downloaded, "
-            "copied or otherwise transferred to this machine.",
-            4,
+        page.add("UNSEARCHED")
+        _tree(
+            page,
+            [_Node(f"{_relative(path, case.root)}  {why}") for path, why in missed],
         )
 
 
-def _conflicts(page: _Page, case: Case, files: dict[str, CaseFile]) -> None:
-    if not case.conflicts:
-        return
-    page.section("CONFLICTS")
-    both = f" {page.theme.glyph(BOTH_WAYS)} "
-    for conflict in case.conflicts:
-        entry = files[conflict.path]
-        opening = f"{page.theme.glyph(FLAG)} {conflict.ref}  {entry.ref}  "
-        page.wrapped(_name(entry), len(opening), opening)
-        indent = 2 + len(conflict.ref) + 2
-        page.add()
-        page.prop("Sources", both.join(conflict.sources), indent)
-        page.prop("Fields", str(len(conflict.differences)), indent)
-        for difference in conflict.differences:
-            page.add()
-            page.wrapped(difference.field, indent)
-            width = max([len(source) for source, _ in difference.values] + [len("Difference")]) + 3
-            for source, value in difference.values:
-                page.prop(source or "Value", value, indent + 2, width=width)
-            if difference.delta:
-                first = difference.values[0][0] or "the first"
-                second = difference.values[-1][0] or "the second"
-                said = f"{second} is {difference.delta} than {first}"
-                page.prop("Difference", said, indent + 2, width=width)
-        page.gap()
-
-
-def _files(page: _Page, case: Case, *, verbose: bool, limit: int, compact: bool) -> None:
-    """The index: one line per file, the same shape for every file.
-
-    A file that wants reading in full - a conflict, an arrival, a local trace,
-    a finding that needs a second look - is marked, and opens as a block under
-    `-v`; the index itself keeps one rhythm so the eye can run down it.
-    """
+def _files(page: _Page, case: Case, *, limit: int) -> None:
+    """One row per file where it fits, with names and signals never truncated."""
     if not case.files:
         return
-    kinds = {finding.ref: finding.kind for finding in case.findings}
     page.section("FILES")
-    listed = hidden = 0
-    for entry in case.files:
-        if entry.state == NOTHING:
-            if limit and listed >= limit:
-                hidden += 1
-                continue
-            listed += 1
-        if verbose and not compact:
-            _file_block(page, case, entry, kinds)
-        else:
-            _file_line(page, case, entry, kinds)
-    if hidden:
+    findings = {finding.ref: finding for finding in case.findings}
+    conflicts = {conflict.ref: conflict for conflict in case.conflicts}
+    groups = (
+        ("NEEDS REVIEW", [entry for entry in case.files if entry.state == REVIEW]),
+        (
+            "WITH EVIDENCE",
+            [entry for entry in case.files if entry.state not in {REVIEW, NOTHING}],
+        ),
+        ("NO EVIDENCE FOUND", [entry for entry in case.files if entry.state == NOTHING]),
+    )
+    ref_width = max(len(entry.ref) for entry in case.files)
+    type_width, size_width = 7, 9
+    wide = page.width >= 88
+    signal_width = 22 if wide else 0
+    file_width = (
+        page.width - ref_width - type_width - size_width - signal_width - (8 if wide else 6)
+    )
+    for title, entries in groups:
+        if not entries:
+            continue
+        shown = entries[:limit] if title == "NO EVIDENCE FOUND" and limit else entries
         page.gap()
-        page.wrapped(f"+{hidden} more files with no evidence found; --limit 0 lists them all.", 2)
+        note = (
+            f" ({len(entries)}; showing {len(shown)})"
+            if len(shown) < len(entries)
+            else f" ({len(entries)})"
+        )
+        page.add(page.theme.bold(title + note))
+        header = (
+            f"{'ID':<{ref_width}}  {'FILE':<{file_width}}  "
+            f"{'TYPE':<{type_width}}  {'SIZE':<{size_width}}"
+        )
+        if wide:
+            header += "  SIGNALS"
+        page.add(page.theme.label(header))
+        page.add(page.theme.rule())
+        for entry in shown:
+            signal = _file_signal(entry, findings, conflicts)
+            columns = [
+                page.theme.wrap(_relative(entry.record.path, case.root), file_width),
+                page.theme.wrap(_format(entry.record.path), type_width),
+                page.theme.wrap(_size(entry.record.size), size_width),
+            ]
+            if wide:
+                columns.append(page.theme.wrap(signal, signal_width))
+            for row in range(max(map(len, columns))):
+                line = (
+                    f"{entry.ref if row == 0 else '':<{ref_width}}  "
+                    f"{columns[0][row] if row < len(columns[0]) else '':<{file_width}}  "
+                    f"{columns[1][row] if row < len(columns[1]) else '':<{type_width}}  "
+                    f"{columns[2][row] if row < len(columns[2]) else '':<{size_width}}"
+                )
+                if wide and row < len(columns[3]):
+                    line += f"  {columns[3][row]}"
+                page.add(line)
+            if signal and not wide:
+                page.wrapped(signal, ref_width + 2)
+    quiet = groups[-1][1]
+    if limit and len(quiet) > limit:
+        page.add(f"+{len(quiet) - limit} more; --limit 0 lists every file.")
 
 
-def _references(entry: CaseFile, kinds: dict[str, str], dot: str) -> list[tuple[str, str]]:
-    findings = [ref for ref in entry.findings if kinds[ref] != "no-trace"]
-    said = []
-    if findings:
-        said.append(("findings", f" {dot} ".join(findings)))
-    if entry.conflicts:
-        said.append(("conflicts", f" {dot} ".join(entry.conflicts)))
-    if entry.pivots:
-        said.append(("pivots", f" {dot} ".join(entry.pivots)))
-    return said
-
-
-def _file_block(page: _Page, case: Case, entry: CaseFile, kinds: dict[str, str]) -> None:
-    page.gap()
-    indent = page.head(_mark(page, entry), entry.ref, _name(entry))
-    if folder := _folder(case, entry.record):
-        page.prop("path", folder, indent)
-    page.prop("type", _format(entry.record.path), indent)
-    if said := named_formats(entry.record):
-        page.prop("format", said, indent)
-    page.prop("size", _size(entry.record.size), indent)
-    page.add()
-    if entry.state == NOTHING:
-        page.prop("evidence", "none found", indent)
-    else:
-        blank = _blank(page.theme)
-        dot = page.theme.glyph(MIDDOT)
-        for name in CATEGORIES:
-            page.prop(name, f" {dot} ".join(entry.found[name]) or blank, indent)
-    references = _references(entry, kinds, page.theme.glyph(MIDDOT))
-    if references:
-        page.add()
-        for label, value in references:
-            page.prop(label, value, indent)
-    page.gap()
-
-
-def _file_line(page: _Page, case: Case, entry: CaseFile, kinds: dict[str, str]) -> None:
-    dot = page.theme.glyph(MIDDOT)
-    found = [name for category_ in CATEGORIES for name in entry.found[category_]]
-    facts = [_format(entry.record.path), _size(entry.record.size)]
-    facts.append(f" {dot} ".join(found) if found else "no evidence found")
-    facts += [value for label, value in _references(entry, kinds, dot) if label != "pivots"]
-    if folder := _folder(case, entry.record):
-        facts.append(f"in {Path(folder).parent}")
-    # Two lines for every file, whatever fits: the name, then what is known
-    # of it. One shape lets the eye run down the index.
-    opening = f"{_mark(page, entry)} {entry.ref}  "
-    said = f" {dot} ".join(facts)
-    page.wrapped(_name(entry), len(opening), opening)
-    for wrapped in page.theme.wrap(said, page.width - len(opening)):
-        page.add(" " * len(opening) + page.theme.dim(wrapped))
+def _file_signal(
+    entry: CaseFile, findings: dict[str, Finding], conflicts: dict[str, Conflict]
+) -> str:
+    labels = []
+    for ref in entry.conflicts:
+        fields = ", ".join(difference.field for difference in conflicts[ref].differences)
+        labels.append(f"conflict: {fields}")
+    named_findings = {
+        "generated": "declared AI source",
+        "signature": "extension mismatch",
+        "same-second": "same-second creation",
+        "author": "shared author",
+        "camera": "shared camera",
+        "lens": "shared lens",
+        "geo": "location",
+    }
+    for ref in entry.findings:
+        kind = findings[ref].kind
+        if kind in named_findings:
+            labels.append(named_findings[kind])
+    if not labels and entry.state != NOTHING:
+        labels = [source for category_ in CATEGORIES for source in entry.found[category_]]
+    return "; ".join(dict.fromkeys(labels))
 
 
 def _relationships(page: _Page, case: Case, files: dict[str, CaseFile]) -> None:
@@ -615,42 +618,52 @@ def _pivots(
         for ref, entry in pivots.shared:
             indent = page.head(" ", ref, entry.type.upper())
             page.prop("Value", entry.value, indent)
-            page.prop("Files", f"{entry.files:,}", indent)
             sources = dict.fromkeys(
                 place.split(PLACE)[1] for place in entry.where if PLACE in place
             )
             page.prop("Sources", f" {page.theme.glyph(MIDDOT)} ".join(sources), indent)
+            page.prop("Files", f"{entry.files:,}", indent)
+            holders = {path for path in entry.holders if path in files}
+            listed = [
+                _Node(f"{held.ref}  {_relative(held.record.path, case.root)}")
+                for held in case.files
+                if held.record.path in holders
+            ]
+            _tree(page, listed, indent=indent)
             page.gap()
 
     if pivots.dense:
         page.gap()
-        page.add("HIGH-DENSITY FILES")
+        page.add("FILES WITH MOST PIVOT OCCURRENCES")
         page.add()
+        nodes = []
         for dense in pivots.dense:
             held = files.get(dense.path)
-            indent = page.head(" ", held.ref if held else "", Path(dense.path).name)
-            page.prop("Pivot locations", f"{dense.places:,}", indent, width=18)
-            page.add()
-            for kind, count in dense.by_type:
-                page.prop(_type_name(kind), f"{count:,}", indent, width=18)
-            page.gap()
+            ref = held.ref if held else ""
+            path = _relative(dense.path, case.root)
+            children = [
+                _Node(f"Pivot occurrences  {dense.places:,}"),
+                *[_Node(f"{_type_name(kind)}  {count:,}") for kind, count in dense.by_type],
+            ]
+            nodes.append(_Node(f"{ref}  {path}", children))
+        _tree(page, nodes)
 
     if verbose and identifiers:
         page.lines.extend(_identifiers(page.theme, identifiers, content=content))
     else:
         page.gap()
-        page.wrapped("Full pivot lists: add -v, or use --json.", 0)
+        page.wrapped("Full identifier occurrences: add -v, or use --json.", 0)
 
 
 def _details(page: _Page, case: Case, files: dict[str, CaseFile], *, verbose: bool) -> None:
-    # What wants a second look, and every file whose arrival or handling here
-    # was recorded: where a file came from is what the report is for.
+    notable = {finding.ref for finding in case.findings if finding.notable}
     chosen = [
         entry
         for entry in case.files
         if entry.state == REVIEW
         or entry.found[ORIGIN]
         or entry.found[ACTIVITY]
+        or any(ref in notable for ref in entry.findings)
         or (verbose and entry.state != NOTHING)
     ]
     if not chosen:
@@ -661,59 +674,62 @@ def _details(page: _Page, case: Case, files: dict[str, CaseFile], *, verbose: bo
     for entry in chosen:
         record = entry.record
         page.gap()
-        indent = page.head(_mark(page, entry), entry.ref, _name(entry))
-        page.prop("Type", _format(record.path), indent)
+        opening = f"{entry.ref}  "
+        page.wrapped(_relative(record.path, case.root), len(opening), opening)
+        header = f"{_format(record.path)}  {page.theme.glyph(MIDDOT)}  {_size(record.size)}"
         if said := named_formats(record):
-            page.prop("Format", said, indent)
-        page.prop("Size", _size(record.size), indent)
-        if folder := _folder(case, record):
-            page.prop("Path", folder, indent)
-
+            header += f"  {page.theme.glyph(MIDDOT)}  {said}"
+        page.wrapped(header, 2)
+        nodes = []
+        if notes := _detail_findings(entry, findings, conflicts, files):
+            nodes.append(_Node("Findings", notes))
         for name in CATEGORIES:
             held = [found for found in record.evidence if category(found) == name]
-            page.add()
-            page.add(" " * 4 + name.upper())
             if not held:
-                page.wrapped(_ABSENT[name], 8)
-                continue
-            for found in held:
-                page.add(" " * 6 + named(found))
-                facts = _facts(found, name, verbose=verbose)
-                width = _width([label for label, _ in facts])
-                for label, value in facts:
-                    page.prop(label, value, 8, width)
+                children = [_Node(_ABSENT[name])]
+            else:
+                children = [
+                    _Node(
+                        named(found),
+                        [
+                            _Node(f"{label}  {value}")
+                            for label, value in _facts(found, name, verbose=verbose)
+                        ],
+                    )
+                    for found in held
+                ]
+            nodes.append(_Node(name.upper(), children))
+        _tree(page, nodes)
 
-        notes = []
-        for ref in entry.conflicts:
-            conflict = conflicts[ref]
-            fields = f" {page.theme.glyph(MIDDOT)} ".join(
-                difference.field for difference in conflict.differences
-            )
-            notes.append(
-                (
-                    page.theme.glyph(FLAG),
-                    f"{' and '.join(conflict.sources)} disagree on {fields} ({ref})",
-                )
-            )
-        for ref in entry.findings:
-            finding = findings[ref]
-            if finding.kind in ("conflicts", "no-trace"):
-                continue
-            others = [files[item.path] for item in finding.items if item.path != record.path]
-            said = f"{finding.title} ({ref})"
-            if others and len(others) <= SHOWN:
-                said += ": " + f" {page.theme.glyph(MIDDOT)} ".join(
-                    f"{other.ref} {_name(other)}" for other in others
-                )
-            elif others:
-                said += f": with {len(others)} other files"
-            notes.append((page.theme.glyph(MIDDOT), said))
-        if notes:
-            page.add()
-            page.add("    ANALYTICAL NOTES")
-            for mark, said in notes:
-                page.wrapped(said, 8, f"      {mark} ")
-        page.gap()
+
+def _detail_findings(
+    entry: CaseFile,
+    findings: dict[str, Finding],
+    conflicts: dict[str, Conflict],
+    files: dict[str, CaseFile],
+) -> list[_Node]:
+    nodes = [_Node(f"Conflict ({ref})", _conflict_nodes(conflicts[ref])) for ref in entry.conflicts]
+    for ref in entry.findings:
+        finding = findings[ref]
+        if finding.kind in {"conflicts", "no-trace"}:
+            continue
+        facts = [
+            _Node(f"{_capital(label)}  {value}")
+            for label, value in finding.facts
+            if label != "files"
+        ]
+        for item in finding.items:
+            if item.path == entry.record.path:
+                facts.extend(_Node(f"{_capital(label)}  {value}") for label, value in item.facts)
+                break
+        others = [files[item.path] for item in finding.items if item.path != entry.record.path]
+        if others:
+            if len(others) <= SHOWN:
+                facts.extend(_Node(f"Also  {other.ref}  {_name(other)}") for other in others)
+            else:
+                facts.append(_Node("Also  " + " ".join(other.ref for other in others)))
+        nodes.append(_Node(f"{finding.title} ({ref})", facts))
+    return nodes
 
 
 def _facts(found: EvidenceRecord, name: str, *, verbose: bool) -> list[tuple[str, str]]:
