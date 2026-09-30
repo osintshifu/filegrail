@@ -24,28 +24,26 @@ from pathlib import Path
 from . import LICENSE, REPOSITORY, TAGLINE, __version__
 from .theme import MIDDOT, Theme, detect
 
-#: Plain ASCII, so the wordmark survives a terminal that cannot print box
-#: drawing and never needs a second variant.
-#: The mark: two records converging on one file. It is the report's own
-#: notation drawn small - `●` is a thing the tool found, `─│┌┐└┬` are the rails
-#: that tie things together - so a reader meets the glyphs here and then meets
-#: them again meaning the same thing four lines later.
+#: The logo mark in half blocks: an f whose crossbar is the rim of a cup. Every
+#: stroke of `assets/filegrail-mark.svg` is 24 units wide, drawn here as one
+#: character across and half a character down, so the strokes keep the weight
+#: they have in the logo.
 WORDMARK = (
-    " ▄▄▄▄▄▄▄▄ ",
-    "▐████████▌",
-    " ▀██████▀ ",
-    "    ██    ",
-    "  ▄▄██▄▄  ",
+    " ▄▀▀▀ ",
+    "▄█▄▄▄▄",
+    " ▀▄▄▄▀",
+    "   █  ",
+    " ▀▀▀▀▀",
 )
 
 #: The same shape where no box drawing is available. Not a different mark: the
 #: same one, in the characters the terminal has.
 WORDMARK_ASCII = (
-    " ________ ",
-    "|________|",
-    " \\______/ ",
-    "    ||    ",
-    "  __||__  ",
+    " .--- ",
+    "_|____",
+    " \\___/",
+    "   |  ",
+    " -----",
 )
 
 
@@ -339,7 +337,7 @@ def _head(theme: Theme) -> list[str]:
     """
     mark = [theme.paint(line, "brand") for line in wordmark(theme)]
     beside = [
-        f"{theme.bold('FILEGRAIL')} {__version__}",
+        f"{theme.bold('FileGrail')} {__version__}",
         theme.label("LOCAL FILE INTELLIGENCE"),
         theme.dim(TAGLINE),
         theme.dim(REPOSITORY.split("//", 1)[-1]),

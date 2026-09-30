@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import __version__
+from .about import _head
 from .analysis import NOTHING, REVIEW, Case, CaseFile, Conflict, Finding, named, stamp
 from .identify import PLACE, Identifier
 from .models import ACTIVITY, CATEGORIES, METADATA, ORIGIN, EvidenceRecord, FileRecord, category
@@ -31,6 +32,11 @@ from .theme import BRANCH, DOUBLE_RULE, FLAG, LAST, MIDDOT, RAIL, RULE, Theme, d
 
 #: Where a property's value starts, measured from its label.
 LABEL = 12
+
+#: Two spaces part a label from its value inside a tree line. Wrapping reads
+#: every run of spaces as one, so the pair travels through it as two
+#: characters that are not spaces and turns back into spaces afterwards.
+_KEPT = ""
 
 SHOWN = 4
 
@@ -172,6 +178,11 @@ class _Page:
     def double(self) -> None:
         self.add(self.theme.dim(self.theme.glyph(DOUBLE_RULE) * self.width))
 
+    def title(self, name: str) -> None:
+        """`INVESTIGATION REPORT ────`: a heading without a number, ruled to the edge."""
+        rule = self.theme.glyph(RULE) * max(0, self.width - len(name) - 2)
+        self.add(self.theme.bold(name) + "  " + self.theme.dim(rule))
+
     def tree(self, parents: tuple[bool, ...], last: bool, value: str, *, indent: int = 2) -> None:
         rail = self.theme.glyph(RAIL)
         stem = " " * indent + "".join("    " if ended else f"{rail}   " for ended in parents)
@@ -180,8 +191,9 @@ class _Page:
         # Wrapped URLs and identifiers must remain copyable without tree glyphs
         # inserted into their value when whitespace is joined back together.
         continuation = " " * len(opening)
-        for number, line in enumerate(self.theme.wrap(value, self.width - len(opening))):
-            self.add((opening if number == 0 else continuation) + line)
+        kept = value.replace("  ", _KEPT)
+        for number, line in enumerate(self.theme.wrap(kept, self.width - len(opening))):
+            self.add((opening if number == 0 else continuation) + line.replace(_KEPT[0], " "))
 
 
 @dataclass(slots=True)
@@ -218,13 +230,17 @@ def render_case(
     unsearched: Unsearched | None = None,
     filtered: str = "",
     now: datetime | None = None,
+    saved: tuple[str, Path] | None = None,
 ) -> str:
-    """The report, top to bottom. A section with nothing in it is not printed."""
+    """The report, top to bottom. A section with nothing in it is not printed.
+
+    `saved` names the report file this run wrote, as its kind and its path.
+    """
     page = _Page(theme or detect())
     files = {entry.record.path: entry for entry in case.files}
     records = [entry.record for entry in case.files]
 
-    moment = _masthead(page, case, home, now, brief=brief, verbose=verbose)
+    moment = _masthead(page, case, home, now, saved, brief=brief, verbose=verbose)
     _summary(page, case, records)
     _findings(page, case, files)
     _files(page, case, limit=limit)
@@ -262,38 +278,25 @@ def _name(entry: CaseFile) -> str:
     return Path(entry.record.path).name
 
 
-#: The mark in half blocks, five lines high: a cup on its stem. Painted in the
-#: brand colour and printed only where the terminal can draw it.
-_GRAIL = (
-    " ▄▄▄▄▄▄▄▄ ",
-    "▐████████▌",
-    " ▀██████▀ ",
-    "    ██    ",
-    "  ▄▄██▄▄  ",
-)
-
-
 def _masthead(
-    page: _Page, case: Case, home: Path | None, now: datetime | None, *, brief: bool, verbose: bool
+    page: _Page,
+    case: Case,
+    home: Path | None,
+    now: datetime | None,
+    saved: tuple[str, Path] | None,
+    *,
+    brief: bool,
+    verbose: bool,
 ) -> datetime:
+    """The start screen's banner, then what was scanned and which report was written."""
     theme = page.theme
     dot = theme.glyph(MIDDOT)
-    mode = f"  {dot}  brief" if brief else f"  {dot}  verbose" if verbose else ""
-    words = [
-        theme.bold(f"FILEGRAIL {__version__}"),
-        theme.label("LOCAL FILE INTELLIGENCE"),
-        f"Investigation report{mode}",
-    ]
-    if theme.unicode:
-        page.add()
-        for row, art in enumerate(_GRAIL):
-            said = words[row] if row < len(words) else ""
-            page.add(theme.paint(art, "brand") + "    " + said)
-    else:
-        for said in words:
-            page.add(said)
     page.add()
-    page.double()
+    for line in _head(theme):
+        page.add(line)
+    page.add()
+    mode = f" {dot} BRIEF" if brief else f" {dot} VERBOSE" if verbose else ""
+    page.title(f"INVESTIGATION REPORT{mode}")
     page.add()
     records = [entry.record for entry in case.files]
     contents = inventory(records)
@@ -313,6 +316,15 @@ def _masthead(
         ),
         0,
     )
+    if saved is None:
+        page.prop("Report", "terminal only", 0)
+    elif LABEL + len(said := f"{saved[0]} {dot} {_display(saved[1])}") <= page.width:
+        page.prop("Report", said, 0)
+    else:
+        # A path too long for the line goes under it whole, rather than
+        # leaving the separator at the end of a line on its own.
+        page.prop("Report", saved[0], 0)
+        page.wrapped(_display(saved[1]), LABEL)
     return moment
 
 

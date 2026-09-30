@@ -766,6 +766,7 @@ def _scan(rest: list[str]) -> int:
                 home=home,
                 unsearched=missed,
                 filtered=describe(args.families, args.extensions),
+                saved=("HTML file", written),
             )
     elif args.timeline:
         report = render_timeline(records, base, theme=theme, home=home)
@@ -783,6 +784,7 @@ def _scan(rest: list[str]) -> int:
             home=home,
             unsearched=missed,
             filtered=describe(args.families, args.extensions),
+            saved=("text file", written) if written else None,
         )
     else:
         report = render_text(
@@ -811,7 +813,8 @@ def _scan(rest: list[str]) -> int:
         exact=args.json or args.graphml or args.graph_csv or args.case_jsonld or args.html,
     )
     if result == 0 and terminal_report is not None:
-        result = _emit(terminal_report, None)
+        # A blank line parts the report from the notice of the file it saved.
+        result = _emit(terminal_report + "\n\n", None)
     if result == 0 and written is not None:
         labels = {
             "json": "JSON report",

@@ -107,9 +107,8 @@ def test_an_installed_run_says_nothing_about_installing(monkeypatch):
     assert "pipx install" not in screen
 
 
-def test_the_tagline_says_both_halves_of_what_it_does():
-    assert "Trace origins" in _screen()
-    assert "Reveal metadata" in _screen()
+def test_the_tagline_names_what_it_does():
+    assert "Provenance. Metadata. Pivots." in _screen()
 
 
 def test_it_shows_a_short_way_in_rather_than_every_example():
@@ -191,7 +190,7 @@ def test_an_explicit_dot_still_scans(tmp_path: Path, monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "ORIGIN" in out or "FILE" in out
-    assert SHOWN_REPOSITORY not in out
+    assert "filegrail <path>" not in out
 
 
 def test_a_path_with_flags_still_scans(tmp_path: Path, capsys):

@@ -128,7 +128,7 @@ def test_every_object_starts_on_its_own_line_with_its_whole_name():
     lines = _report(_corpus(), theme=_theme()).splitlines()
 
     assert f"#001  {LONG}" in lines
-    assert any(line.endswith(f"#001 {LONG}") for line in lines)
+    assert any(line.endswith(f"── #001  {LONG}") for line in lines)
 
 
 def test_a_file_with_nothing_to_say_takes_one_line_until_verbose_opens_it():
@@ -207,8 +207,8 @@ def test_a_shared_pivot_lists_every_file_that_holds_it():
 
     assert "P01  PERSON" in pivots
     assert "Files       2" in pivots
-    assert "├── #001 alpha.pdf" in pivots
-    assert "└── #002 nested/beta.docx" in pivots
+    assert "├── #001  alpha.pdf" in pivots
+    assert "└── #002  nested/beta.docx" in pivots
 
 
 def test_pivot_dense_files_use_the_same_tree_shape_as_shared_pivots():
@@ -231,9 +231,9 @@ def test_pivot_dense_files_use_the_same_tree_shape_as_shared_pivots():
     report = _report(records, theme=_theme())
     dense = report[report.index("FILES WITH MOST PIVOT OCCURRENCES") :]
 
-    assert "└── #001 links.docx" in dense
-    assert "    ├── Pivot occurrences 120" in dense
-    assert "    └── URLs 60" in dense
+    assert "└── #001  links.docx" in dense
+    assert "    ├── Pivot occurrences  120" in dense
+    assert "    └── URLs  60" in dense
 
 
 def test_the_notes_explain_only_the_match_bases_the_report_uses():
