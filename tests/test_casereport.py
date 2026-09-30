@@ -132,13 +132,12 @@ def test_every_object_starts_on_its_own_line_with_its_whole_name():
 
 
 def test_a_file_with_nothing_to_say_takes_one_line_until_verbose_opens_it():
+    sheet = f"#003  {Path('isamples/sheet.xlsx')}"
     quiet = _report(_corpus(), theme=_theme()).splitlines()
     assert any(line.startswith("#004  notes.md") for line in quiet)
-    assert not any(line == "#003  isamples/sheet.xlsx" for line in quiet)
+    assert not any(line == sheet for line in quiet)
 
-    assert (
-        "#003  isamples/sheet.xlsx" in _report(_corpus(), theme=_theme(), verbose=True).splitlines()
-    )
+    assert sheet in _report(_corpus(), theme=_theme(), verbose=True).splitlines()
 
 
 def test_brief_stops_at_a_one_line_index():
@@ -208,7 +207,7 @@ def test_a_shared_pivot_lists_every_file_that_holds_it():
     assert "P01  PERSON" in pivots
     assert "Files       2" in pivots
     assert "├── #001  alpha.pdf" in pivots
-    assert "└── #002  nested/beta.docx" in pivots
+    assert f"└── #002  {Path('nested/beta.docx')}" in pivots
 
 
 def test_pivot_dense_files_use_the_same_tree_shape_as_shared_pivots():

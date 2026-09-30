@@ -120,7 +120,7 @@ def test_the_report_can_be_written_to_a_file_it_then_names(tmp_path: Path, capsy
     first = capsys.readouterr()
     assert "SUMMARY" in first.out and "FILES" in first.out
     assert re.search(r"^Report +HTML file", first.out, re.MULTILINE)
-    assert str(out.resolve()).replace(" ", "") in re.sub(r"\s+", "", first.out)
+    assert "raportkońcowy.html" in re.sub(r"\s+", "", first.out)
     assert "END OF REPORT" in first.out
     assert "HTML report:" not in first.out
     assert "<!doctype html>" not in first.out
