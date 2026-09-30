@@ -1,6 +1,6 @@
 <div align="center">
 
-[![PyPI](https://img.shields.io/badge/pypi-v1.0.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/)
+[![PyPI](https://img.shields.io/badge/pypi-v1.1.0-3775A9?style=flat-square)](https://pypi.org/project/filegrail/)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9A6700?style=flat-square)
 ![Runtime dependencies](https://img.shields.io/badge/runtime_dependencies-0-00897B?style=flat-square)
 ![Local and read-only](https://img.shields.io/badge/local_%26_read--only-yes-1F883D?style=flat-square)
