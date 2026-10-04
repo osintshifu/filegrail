@@ -13,6 +13,10 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Fixed a missing value column in single-file reports.
 - `--redact` is applied to identifiers found inside documents.
 - Reports are written only over earlier FileGrail reports, never over other files in the examined directory.
+- Dates are read the same way on every supported Python version.
+- Spreadsheet-safe values in CSV exports.
+- `--redact` covers recorded commands and tool names.
+- Export and cleanup never write through links or into folders the tool did not create.
 
 ## 1.1.0 - 2026-09-30
 
