@@ -5,7 +5,7 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.1.1 - 2026-10-05
 
 - Damaged archives and documents no longer stop a scan.
 - Files and archive contents that could not be read are listed in the report.
