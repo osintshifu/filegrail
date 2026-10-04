@@ -180,6 +180,31 @@ def test_a_report_will_not_replace_a_file_in_the_directory_it_examines(tmp_path:
     assert main(["scan", str(case), "--json", "-o", str(report)]) == 0
 
 
+def test_a_report_replaces_its_own_working_images_and_no_other_folder(
+    tmp_path: Path, capsys, monkeypatch
+):
+    from tests.photo import jpeg_with_exif
+
+    monkeypatch.setattr("filegrail.photopixels.available", lambda: False)
+    photo = tmp_path / "in" / "camera.jpg"
+    photo.parent.mkdir()
+    jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
+    report = tmp_path / "out" / "report.html"
+    report.parent.mkdir()
+    folder = report.parent / "report.files"
+    folder.mkdir()
+    notes = folder / "notes.txt"
+    notes.write_text("not written by this tool", encoding="utf-8")
+
+    assert main(["image", str(photo.parent), "--out", str(report)]) == 2
+    assert notes.read_text(encoding="utf-8") == "not written by this tool"
+    assert "not the working images of an earlier FileGrail report" in capsys.readouterr().err
+
+    notes.unlink()
+    assert main(["image", str(photo.parent), "--out", str(report)]) == 0
+    assert main(["image", str(photo.parent), "--out", str(report)]) == 0
+
+
 def test_help_lists_a_command(capsys):
     assert main(["help", "explain"]) == 0
 
@@ -339,7 +364,7 @@ def test_photo_rerender_replaces_assets_and_redaction_removes_old_pixels(tmp_pat
 
     assert main(["image", str(root), "--out", str(report)]) == 0
     assert (assets / "001-main-preview.jpg").is_file()
-    stale = assets / "stale-from-previous-run.jpg"
+    stale = assets / "002-main-preview.jpg"  # an image of an earlier report with more photos
     stale.write_bytes(b"old pixels")
 
     assert main(["image", str(root), "--out", str(report)]) == 0

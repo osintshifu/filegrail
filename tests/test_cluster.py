@@ -165,3 +165,17 @@ def test_the_section_is_absent_unless_it_was_asked_for():
     ]
 
     assert "SHARED ATTRIBUTES" not in render_text(records, Path("/case"), theme=PLAIN)
+
+
+def test_a_placeholder_serial_does_not_tie_two_cameras_together():
+    """Two bodies that both say `0000000` have not said the same thing."""
+    records = [
+        _photo("/case/a.jpg", Make="Acme", Model="X1", BodySerialNumber="0000000"),
+        _photo("/case/b.jpg", Make="Acme", Model="Z9", BodySerialNumber="0000000"),
+        _photo("/case/c.jpg", Make="Acme", Model="X1", BodySerialNumber="30012345"),
+        _photo("/case/d.jpg", Make="Acme", Model="X1", BodySerialNumber="30012345"),
+    ]
+
+    shared = [group.name for group in cluster(records) if group.axis == DEVICE]
+
+    assert shared == ["30012345"]

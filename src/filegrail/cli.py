@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -250,7 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-archives",
         action="store_true",
-        help="Do not give an archive's origin to the files inside it.",
+        help="Do not inspect carried files or give an archive's origin to them.",
     )
     parser.add_argument("--version", action="version", version=f"filegrail {__version__}")
     return parser
@@ -882,6 +883,14 @@ def _image(rest: list[str]) -> int:
 
     output = args.out.resolve()
     images = None if args.embed else output.with_name(f"{output.stem}.files")
+    if images is not None and (images.exists() or images.is_symlink()):
+        if not _is_working_images(images):
+            print(
+                f"filegrail: {images} already exists and is not the working images of an "
+                "earlier FileGrail report; choose another output path or use --embed",
+                file=sys.stderr,
+            )
+            return 2
     staging = _photo_asset_work_path(images, "tmp") if images is not None else None
     backup = _photo_asset_work_path(images, "bak") if images is not None else None
     excluded = {output}
@@ -1086,6 +1095,21 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
     else:
         path.unlink(missing_ok=True)
+
+
+#: What a report names its working images: the image's number, what it shows, and
+#: the format. A folder holding only such files is a report's own, and is replaced
+#: by the next report written to the same place.
+_WORKING_IMAGE = re.compile(r"\d{3,}-[A-Za-z0-9_.\-]+\.(?:png|jpg|bin)")
+
+
+def _is_working_images(path: Path) -> bool:
+    if path.is_symlink() or not path.is_dir():
+        return False
+    try:
+        return all(_WORKING_IMAGE.fullmatch(entry.name) for entry in path.iterdir())
+    except OSError:
+        return False
 
 
 def _prepare_photo_asset_stage(assets: Path, staging: Path, backup: Path) -> None:

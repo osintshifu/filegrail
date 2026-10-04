@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from ...models import EvidenceRecord
+from ...util import utc_timestamp
 from ..compression import DAMAGED_STREAM
 from . import (
     aiff,
@@ -1000,13 +1001,7 @@ def _normalise(value: str | None) -> str | None:
         except ValueError:
             continue
         return parsed.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-    try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return utc_timestamp(value)
 
 
 def _first(values: dict[str, str], keys: tuple[str, ...]) -> str | None:

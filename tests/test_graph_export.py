@@ -113,3 +113,23 @@ def test_the_scan_is_not_a_property_of_every_relationship():
     assert "run" not in rows[0]
     assert "coverage" not in rows[0]
     assert json.loads(render_graph_meta(run, coverage)) == {"run": run, "coverage": coverage}
+
+
+def test_csv_cells_a_spreadsheet_would_run_are_written_as_text():
+    """An author, a title or a field name is whatever the file says, and a file
+    can say `=HYPERLINK(...)`. Identifiers open on their type and are untouched."""
+    evidence = RelationshipEvidence(
+        source="document-metadata", place="+cmd|' /C calc'!A0", corpus="metadata", count=1
+    )
+    hostile = Node("person:x", "person", '=HYPERLINK("http://evil.example","click")', "x")
+    graph = Graph(
+        nodes=(Node("file:/case/a.docx", "file", "/case/a.docx"), hostile),
+        relationships=(Relationship("file:/case/a.docx", "person:x", "author", 1, (evidence,)),),
+    )
+
+    row = next(csv.DictReader(io.StringIO(render_graph_csv(graph))))
+
+    assert row["target_label"] == "'" + hostile.value
+    assert row["evidence_place"] == "'+cmd|' /C calc'!A0"
+    assert row["source"] == "file:/case/a.docx"
+    assert row["target"] == "person:x"

@@ -130,6 +130,16 @@ def _model(fields: dict[str, str]) -> str | None:
     return model
 
 
+#: What a camera writes for a serial number it does not have. Two bodies that
+#: both say `0000000` have not said the same thing, and grouping on it would
+#: tie every such photograph in a scan to every other.
+_NO_SERIAL = frozenset({"n/a", "na", "none", "null", "unknown", "not available", "-", "?"})
+
+
+def _is_placeholder(serial: str) -> bool:
+    return set(serial) <= {"0"} or serial.casefold() in _NO_SERIAL
+
+
 def attributes(record: FileRecord) -> Iterator[Attribute]:
     """Every identifying value this file carries, the axis it sits on, and the
     field it was read from."""
@@ -142,12 +152,12 @@ def attributes(record: FileRecord) -> Iterator[Attribute]:
 
         for field in _SERIAL_FIELDS:
             serial = (found.fields.get(field) or "").strip()
-            if serial:
+            if serial and not _is_placeholder(serial):
                 yield Attribute(DEVICE, serial, f"{block}{_BASIS}{field}", found)
                 break
 
         lens = (found.fields.get(_LENS_SERIAL) or "").strip()
-        if lens:
+        if lens and not _is_placeholder(lens):
             yield Attribute(LENS, lens, f"{block}{_BASIS}{_LENS_SERIAL}", found)
 
         model = _model(found.fields)

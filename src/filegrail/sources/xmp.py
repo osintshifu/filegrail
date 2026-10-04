@@ -15,10 +15,10 @@ the PNG reader hands the bytes over already inflated.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ElementTree
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ..models import EvidenceRecord
+from ..util import utc_timestamp
 from .embedded import png
 
 _RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -370,12 +370,4 @@ def _prefixed(tag: str) -> str:
 
 def _timestamp(value: str | None) -> str | None:
     """XMP writes ISO-8601 with an offset; the report compares times in UTC."""
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return utc_timestamp(value)

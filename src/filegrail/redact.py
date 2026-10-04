@@ -210,6 +210,15 @@ def redact_url(value: str) -> str:
     return urlunsplit(parts._replace(query=urlencode(pairs, safe="[]:")))
 
 
+_URL_IN_TEXT = re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s\"'<>]+", re.IGNORECASE)
+
+
+def redact_urls(value: str) -> str:
+    """`redact_url` for every URL found inside a line of other text, such as the
+    command that fetched a file."""
+    return _URL_IN_TEXT.sub(lambda found: redact_url(found.group(0)), value)
+
+
 def redact_text(value: str) -> str:
     """Replace credentials found anywhere in a line of output."""
     if not value:

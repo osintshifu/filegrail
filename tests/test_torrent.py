@@ -176,6 +176,20 @@ def test_a_scan_pairs_against_the_clients_store(tmp_path: Path):
     assert record.evidence[0].container == str(store / "abcdef.torrent")
 
 
+def test_a_scan_that_does_not_read_the_profile_does_not_read_the_clients_store(tmp_path: Path):
+    home = tmp_path / "home"
+    store = home / ".config/transmission/torrents"
+    store.mkdir(parents=True)
+    _torrent(store / "abcdef.torrent", _single())
+    tree = tmp_path / "case"
+    tree.mkdir()
+    (tree / "film.mkv").write_bytes(b"x" * 4096)
+
+    record = next(iter(scan(tree, use_shell_history=False, home=home, use_profile=False)))
+
+    assert record.evidence == []
+
+
 def test_the_survey_reports_a_client_store(tmp_path: Path):
     """`doctor` promises to say what could be searched, and a scan reads these."""
     store = tmp_path / ".config/transmission/torrents"

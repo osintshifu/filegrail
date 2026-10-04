@@ -463,6 +463,10 @@ def coordinates(exif: Exif) -> tuple[float, float] | None:
         return None
     if not (-90 <= latitude <= 90) or not (-180 <= longitude <= 180):
         return None
+    # A camera with no fix writes the GPS block anyway, with every number zero.
+    # That is a default, not a place in the Gulf of Guinea.
+    if latitude == 0 and longitude == 0:
+        return None
     return latitude, longitude
 
 

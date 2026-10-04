@@ -9,7 +9,7 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 _EPOCH_1601_OFFSET = 11_644_473_600  # seconds between 1601-01-01 and 1970-01-01
@@ -141,6 +141,49 @@ def iso(ts: float | None) -> str | None:
     if ts is None:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+#: ISO 8601 as files write it: extended or basic, any number of fractional
+#: digits, an offset as `+02:00`, `+0200` or `+02`, or `Z`.
+_ISO_8601 = re.compile(
+    r"(\d{4})-?(\d{2})-?(\d{2})"
+    r"(?:[Tt ](\d{2})(?::?(\d{2}))?(?::?(\d{2})(?:[.,](\d+))?)?)?"
+    r"\s*(?:([Zz])|([+-])(\d{2})(?::?(\d{2}))?)?"
+)
+
+
+def utc_timestamp(value: str | None) -> str | None:
+    """An ISO 8601 timestamp as UTC with a `Z`, or None where it is not one.
+
+    A time with no offset is read as UTC. Not `datetime.fromisoformat`, which
+    before Python 3.11 refuses an offset without its colon, a fraction that is
+    not three or six digits and the basic format - all of which files write -
+    so the same file would carry a date on one interpreter and none on another.
+    """
+    found = _ISO_8601.fullmatch((value or "").strip())
+    if found is None:
+        return None
+    year, month, day, hour, minute, second, fraction, utc, sign, zone_hours, zone_minutes = (
+        found.groups()
+    )
+    try:
+        zone = timezone.utc
+        if sign:
+            offset = timedelta(hours=int(zone_hours), minutes=int(zone_minutes or 0))
+            zone = timezone(-offset if sign == "-" else offset)
+        parsed = datetime(
+            int(year),
+            int(month),
+            int(day),
+            int(hour or 0),
+            int(minute or 0),
+            int(second or 0),
+            int((fraction or "0")[:6].ljust(6, "0")),
+            tzinfo=zone,
+        )
+    except ValueError:  # a month 13, an hour 25, an offset of a day or more
+        return None
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def chrome_time(value: int | None) -> str | None:

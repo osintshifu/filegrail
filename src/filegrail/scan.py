@@ -422,7 +422,7 @@ def scan(
 
     if follow_archives:
         _attach_archive_records(records, downloads, downloads_by_name)
-    torrent_coverage = _attach_torrent_records(records, files, home, source_stats)
+    torrent_coverage = _attach_torrent_records(records, files, home, source_stats, use_profile)
     attach_lineage(records)
 
     if coverage is not None:
@@ -555,6 +555,7 @@ def _attach_torrent_records(
     files: list[Path],
     home: Path | None = None,
     stats: dict[str, int] | None = None,
+    use_profile: bool = True,
 ) -> SourceCoverage:
     """Give a file the torrent that lists it, where one was scanned beside it.
 
@@ -572,7 +573,9 @@ def _attach_torrent_records(
     scanned_paths = [path for path in files if is_torrent(path)]
     scanned = [torrent for path in scanned_paths if (torrent := read_torrent(path)) is not None]
     source_stats = stats if stats is not None else {}
-    stored = collect_torrents(home=home, stats=source_stats)
+    # The clients' stores live in the user's profile, which a scan told not to
+    # read does not open.
+    stored = collect_torrents(home=home, stats=source_stats) if use_profile else []
     for torrent in [*scanned, *stored]:
         for name, sizes in torrent.members.items():
             for size in sizes:
@@ -590,6 +593,8 @@ def _attach_torrent_records(
     else:
         state = UNAVAILABLE
     details = []
+    if not use_profile:
+        details.append("client stores not read: the user profile was not read")
     if stores_found:
         details.append(f"{stores_read} of {stores_found} client stores readable")
     if found and read != found:

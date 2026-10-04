@@ -98,6 +98,26 @@ def test_southern_and_western_hemispheres_are_negative(tmp_path: Path):
     assert coordinates(read_exif(photo)) == (-33.0, -70.0)
 
 
+def test_a_gps_block_of_zeros_is_not_a_location(tmp_path: Path):
+    """A camera with no satellite fix still writes the block, every number zero."""
+    photo = tmp_path / "no-fix.jpg"
+    photo.write_bytes(
+        _jpeg(
+            _tiff(
+                NIKON,
+                [
+                    (0x0001, 2, "N"),
+                    (0x0002, 5, [(0, 1), (0, 1), (0, 1)]),
+                    (0x0003, 2, "E"),
+                    (0x0004, 5, [(0, 1), (0, 1), (0, 1)]),
+                ],
+            )
+        )
+    )
+
+    assert coordinates(read_exif(photo)) is None
+
+
 def test_out_of_range_coordinates_are_rejected(tmp_path: Path):
     photo = tmp_path / "bogus.jpg"
     photo.write_bytes(

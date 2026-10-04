@@ -426,7 +426,7 @@ class EvidenceRecord:
 
     def redacted(self) -> EvidenceRecord:
         """Return a copy with credentials removed from every free-text field."""
-        from .redact import redact_text, redact_url
+        from .redact import redact_text, redact_url, redact_urls
 
         def clean(value: str) -> str:
             # A tag like UserComment is free text: it can hold a URL, a command
@@ -435,9 +435,10 @@ class EvidenceRecord:
 
         return replace(
             self,
+            tool=redact_urls(redact_text(self.tool)) if self.tool else None,
             url=clean(self.url) if self.url else None,
             referrer=clean(self.referrer) if self.referrer else None,
-            command=redact_text(self.command) if self.command else None,
+            command=redact_urls(redact_text(self.command)) if self.command else None,
             location=clean(self.location) if self.location else None,
             note=clean(self.note) if self.note else None,
             fields={name: clean(value) for name, value in self.fields.items()},

@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ...models import EvidenceRecord
+from ...util import utc_timestamp
 from .parts import read_part
 
 PDF_SUFFIXES = {".pdf"}
@@ -569,12 +570,4 @@ def _text(root: ElementTree.Element | None, tag: str) -> str | None:
 
 
 def _normalise_timestamp(value: str | None) -> str | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return utc_timestamp(value)

@@ -155,33 +155,47 @@ def render_graph_csv(
         source = nodes[relationship.source]
         target = nodes[relationship.target]
         found = relationship.evidence
-        writer.writerow(
-            {
-                "source": source.id,
-                "source_type": source.type,
-                "source_label": _label(source),
-                "target": target.id,
-                "target_type": target.type,
-                "target_label": _label(target),
-                "kind": relationship.kind,
-                "label": _edge_label(relationship.kind),
-                "weight": relationship.count,
-                "evidence_count": len(found),
-                "evidence_source": _joined(item.source for item in found),
-                "evidence_place": _joined(item.place for item in found),
-                "evidence_category": _joined(item.category or "" for item in found),
-                "evidence_match": _joined(item.match or "" for item in found),
-                "evidence_rule": _joined(item.rule or "" for item in found),
-                "evidence_at": min((item.at for item in found if item.at), default=""),
-                "evidence": json.dumps(
-                    [item.to_dict() for item in found],
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                    sort_keys=True,
-                ),
-            }
-        )
+        row = {
+            "source": source.id,
+            "source_type": source.type,
+            "source_label": _label(source),
+            "target": target.id,
+            "target_type": target.type,
+            "target_label": _label(target),
+            "kind": relationship.kind,
+            "label": _edge_label(relationship.kind),
+            "weight": relationship.count,
+            "evidence_count": len(found),
+            "evidence_source": _joined(item.source for item in found),
+            "evidence_place": _joined(item.place for item in found),
+            "evidence_category": _joined(item.category or "" for item in found),
+            "evidence_match": _joined(item.match or "" for item in found),
+            "evidence_rule": _joined(item.rule or "" for item in found),
+            "evidence_at": min((item.at for item in found if item.at), default=""),
+            "evidence": json.dumps(
+                [item.to_dict() for item in found],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        }
+        writer.writerow({name: _inert(value) for name, value in row.items()})
     return output.getvalue()
+
+
+#: What a spreadsheet reads as the start of a formula.
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _inert(value: object) -> object:
+    """A cell a spreadsheet will show rather than run.
+
+    The labels and places in an edge list are values the scanned files wrote -
+    an author, a title, a field name - and a file can set any of them to
+    `=HYPERLINK(...)`. An apostrophe in front is what a spreadsheet takes to
+    mean text. Node identifiers always open on their type, so are never touched.
+    """
+    return f"'{value}" if isinstance(value, str) and value.startswith(_FORMULA_STARTS) else value
 
 
 def render_graph_meta(

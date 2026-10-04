@@ -162,6 +162,14 @@ def clean_file(
     body, removed = outcome
 
     target = None if destination is None else destination / _under(path, below)
+    if destination is not None and target is not None:
+        # A link in the destination points somewhere the user did not choose, and
+        # writing through it would replace the file it names - which may be the
+        # original - or create one beside it.
+        if target.is_symlink():
+            return Cleaned(path, note="a link is already there; a copy is not written through it")
+        if not target.parent.resolve().is_relative_to(destination.resolve()):
+            return Cleaned(path, note="the copy would land outside the destination")
     if target is not None and target.exists() and not overwrite:
         return Cleaned(path, note="a file is already there; --overwrite replaces it")
 

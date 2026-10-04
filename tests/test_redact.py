@@ -236,3 +236,19 @@ def test_redacts_a_private_key_block_and_keeps_its_armour():
     assert redacted.count("[REDACTED:private_key:") == 1
     assert head in redacted and foot in redacted
     assert "MIIEvQ" not in one_line and "then more" in one_line
+
+
+def test_a_credential_in_the_command_or_tool_of_a_record_does_not_survive():
+    """A command that fetched a file carries its URL, and the URL its query."""
+    record = EvidenceRecord(
+        source="shell-history",
+        tool="curl -H 'Authorization: Bearer abcdef0123456789abcdef'",
+        command="wget 'https://files.example/a?api_key=SECRETSECRET123&x=1'",
+    )
+
+    redacted = record.redacted()
+
+    assert "abcdef0123456789abcdef" not in (redacted.tool or "")
+    assert "SECRETSECRET123" not in (redacted.command or "")
+    assert "https://files.example/a?api_key=" in (redacted.command or "")
+    assert "x=1" in (redacted.command or "")

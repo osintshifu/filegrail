@@ -475,3 +475,38 @@ def test_an_svg_loses_what_is_written_around_the_drawing(tmp_path: Path):
     assert 'd="M0 0 L10 10"' in copy
     assert "c2pa" not in copy
     assert ElementTree.fromstring(copy).get("viewBox") == "0 0 10 10"
+
+
+def test_a_copy_is_never_written_through_a_link_in_the_destination(tmp_path: Path):
+    """A link names a file the user did not choose to write to, and `--overwrite`
+    would replace it - which, for a link to the original, is the original."""
+    import pytest
+
+    photo = tmp_path / "photo.jpg"
+    jpeg_with_exif(photo, "Canon", "Canon EOS 40D", "2024:01:02 03:04:05")
+    original = photo.read_bytes()
+    out = tmp_path / "out"
+    out.mkdir()
+    try:
+        (out / "photo.jpg").symlink_to(photo)
+    except (OSError, NotImplementedError):
+        pytest.skip("this platform cannot create symbolic links")
+
+    result = clean_file(photo, out, overwrite=True)
+
+    assert result.written is None
+    assert "link" in (result.note or "")
+    assert photo.read_bytes() == original
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (out / "photo.jpg").unlink()
+    (out / "nested").symlink_to(elsewhere, target_is_directory=True)
+    inside = tmp_path / "tree" / "nested" / "photo.jpg"
+    inside.parent.mkdir(parents=True)
+    inside.write_bytes(original)
+
+    result = clean_file(inside, out, below=tmp_path / "tree")
+
+    assert result.written is None
+    assert list(elsewhere.iterdir()) == []
