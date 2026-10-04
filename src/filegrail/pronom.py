@@ -30,6 +30,7 @@ import re
 import struct
 import zipfile
 import zlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -365,11 +366,27 @@ def _zip_members(archive: zipfile.ZipFile) -> dict[str, Any]:
 
         members[info.filename] = None if info.is_dir() else (read, info.file_size)
         # A folder named only by the files inside it is still in the zip.
-        folder = info.filename
-        while "/" in folder.rstrip("/"):
-            folder = folder.rstrip("/").rpartition("/")[0] + "/"
+        for folder in _folders(info.filename):
             members.setdefault(folder, None)
     return members
+
+
+#: How many folders a name is allowed to imply, counted from the top. Every
+#: one is kept as a string of its own, so a name made of slashes costs the
+#: square of its length unless this stops it; the registry names folders near
+#: the top of a package.
+_FOLDER_DEPTH = 32
+
+
+def _folders(name: str) -> Iterator[str]:
+    """`a/b/c.txt` implies `a/` and `a/b/`, nearest the top first."""
+    whole = name.rstrip("/")
+    at = -1
+    for _ in range(_FOLDER_DEPTH):
+        at = whole.find("/", at + 1)
+        if at < 0:
+            return
+        yield whole[: at + 1]
 
 
 def _ole_members(path: Path) -> dict[str, Any]:

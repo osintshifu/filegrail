@@ -5,7 +5,14 @@ import zipfile
 from pathlib import Path
 
 from filegrail.scan import Unsearched, scan
-from filegrail.sources.archives import _MAX_READ, is_archive, list_members
+from filegrail.sources import archives
+from filegrail.sources.archives import (
+    _MAX_HEADER_BYTES,
+    _MAX_READ,
+    _open_tar,
+    is_archive,
+    list_members,
+)
 from tests.photo import jpeg_with_exif
 
 from .test_browser import CHROMIUM_SCHEMA, START_TIME
@@ -221,3 +228,31 @@ def test_an_archive_with_more_members_than_are_opened_is_named(tmp_path: Path):
     scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
 
     assert [Path(path).name for path in missed.partly_read] == ["pack.zip"]
+
+
+def test_a_tar_header_larger_than_any_real_one_is_refused(tmp_path: Path):
+    """A long-name header is read into memory whole, on the size it states: 859
+    bytes of bzip2 stated a gigabyte and took two."""
+    name = "a" * (_MAX_HEADER_BYTES + 10)
+    path = tmp_path / "long.tar"
+    with tarfile.open(path, "w", format=tarfile.GNU_FORMAT) as bundle:
+        info = tarfile.TarInfo(name)
+        info.size = 1
+        bundle.addfile(info, io.BytesIO(b"x"))
+
+    assert _open_tar(path) is None
+
+
+def test_a_compressed_file_larger_than_is_read_is_named(tmp_path: Path, monkeypatch):
+    import gzip
+
+    monkeypatch.setattr(archives, "_MAX_MEMBER_BYTES", 100)
+    case = tmp_path / "case"
+    case.mkdir()
+    with gzip.open(case / "big.txt.gz", "wb") as stream:
+        stream.write(b"x" * 200)
+
+    missed = Unsearched()
+    scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
+
+    assert [Path(path).name for path in missed.partly_read] == ["big.txt.gz"]

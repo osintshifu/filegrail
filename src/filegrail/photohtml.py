@@ -1385,6 +1385,7 @@ def render_photo_html(
     places += [("evidence", "summary", "Evidence")]
     head = (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="generator" content="filegrail">'
         f'<meta http-equiv="Content-Security-Policy" content="{LINKED_POLICY if written else POLICY}">'
         '<meta name="referrer" content="no-referrer">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'

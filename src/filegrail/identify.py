@@ -35,6 +35,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import re
+import string
 from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -60,7 +61,7 @@ from .checksums import (
 from .models import ORIGIN, FileRecord, category
 from .models import label as source_label
 from .redact import PATTERNS as REDACT_PATTERNS
-from .redact import fingerprint
+from .redact import fingerprint, redact_text, redact_url
 
 #: What files record about themselves: the corpus this has always read, and the
 #: one the detectors were tuned for. Short structured strings, where a match is
@@ -136,7 +137,43 @@ EMAIL_RE = re.compile(
     r"\b[A-Za-z0-9._%+\-]+@([A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+)\b"
 )
+_LOCAL_CHARS = frozenset(string.ascii_letters + string.digits + "._%+-")
+_LOCAL_RUN_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+\Z")
+_AT_DOMAIN_RE = re.compile(
+    r"@([A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+)\b"
+)
+
+
+def _emails(text: str) -> Iterator[tuple[int, str, str]]:
+    """Each address in `text` as (start, whole, domain): what `EMAIL_RE.finditer`
+    finds, in time linear in the text.
+
+    The regular expression tries every word boundary in a run of `._%+-`
+    separated pieces as a start and reads on to the end of the run before it
+    fails, so a long run with no address in it costs the square of its length.
+    Here each `@` is the only place an address can be, and only the run of
+    local-part characters that ends at it is looked at.
+    """
+    cursor = 0
+    at = text.find("@")
+    while at >= 0:
+        domain = _AT_DOMAIN_RE.match(text, at)
+        if domain is not None:
+            first = at
+            while first > cursor and text[first - 1] in _LOCAL_CHARS:
+                first -= 1
+            local = _LOCAL_RUN_RE.search(text, first, at)
+            if local is not None:
+                yield local.start(), text[local.start() : domain.end()], domain.group(1)
+                cursor = domain.end()
+        at = text.find("@", max(at + 1, cursor))
+
+
 URL_RE = re.compile(r"\bhttps?://[^\s<>\"'`\](){}]+", re.IGNORECASE)
+
+#: What stands before an address that is the password half of `user:password@host`.
+_USERINFO_BEFORE = re.compile(r"://[^/\s:@]+:$")
 IPV4_RE = re.compile(r"(?<![\w.\-])(\d{1,3}(?:\.\d{1,3}){3})(?![\w.\-])")
 HASH_RE = re.compile(
     r"(?<![A-Za-z0-9\-])([A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64}|[A-Fa-f0-9]{128})"
@@ -961,7 +998,11 @@ def _texts(
 
 
 def extract(
-    records: list[FileRecord], *, content: bool = False, metadata: bool = True
+    records: list[FileRecord],
+    *,
+    content: bool = False,
+    metadata: bool = True,
+    redact: bool = False,
 ) -> list[Identifier]:
     """Every identifier in what the scan read, deduplicated across files.
 
@@ -969,12 +1010,17 @@ def extract(
     `content` the corpus of what they say. The two are kept apart on each
     entry rather than merged, so a reader can tell a name in a document from a
     name in a download record - and see where one value is both.
+
+    `redact` is for output that leaves the machine: a URL is kept for where it
+    points, and loses the credentials in its query and its login.
     """
     found: dict[tuple[str, str], Identifier] = {}
 
     for source in _texts(records, content=content, metadata=metadata):
         place = f"{source.file}{PLACE}{source.source}{PLACE}{source.where}"
         for family, raw, normalized, private in _scan(source.text, source.where):
+            if redact and family == "url":
+                raw, normalized = (redact_text(redact_url(value)) for value in (raw, normalized))
             key = (family, normalized)
             entry = found.get(key)
             if entry is None:
@@ -1057,14 +1103,17 @@ def _scan(text: str, where: str) -> Iterator[tuple[str, str, str, bool | None]]:
         if login.lower() not in _SHARED_HOMES:
             yield "handle", f"home:{login}", f"home:{login.lower()}", None
 
-    for match in EMAIL_RE.finditer(text):
-        host = normalize_domain(match.group(1))
+    for mail_start, mail, mail_domain in _emails(text):
+        host = normalize_domain(mail_domain)
         if host is None:
             continue  # unknown TLD: almost always a false positive
         # The domain is still worth having: a message id names the host that
         # minted it, which is a real fact about where the message was written.
-        if not identifier:
-            yield "email", match.group(0), match.group(0).lower(), None
+        # `user:password@host` is a login in a URL. What follows the colon is a
+        # password, not the local part of an address.
+        in_userinfo = _USERINFO_BEFORE.search(text[max(0, mail_start - 256) : mail_start])
+        if not identifier and not in_userinfo:
+            yield "email", mail, mail.lower(), None
         hosts.add(host)
 
     for match in URL_RE.finditer(text):

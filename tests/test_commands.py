@@ -159,6 +159,27 @@ def test_output_cannot_replace_the_file_being_scanned(tmp_path: Path, capsys):
     assert "output file cannot be the scanned file" in capsys.readouterr().err
 
 
+def test_a_report_will_not_replace_a_file_in_the_directory_it_examines(tmp_path: Path, capsys):
+    """`-o` over a photograph in the scanned directory used to replace it with
+    the report and exit 0; a report this tool wrote earlier may be replaced."""
+    from tests.photo import jpeg_with_exif
+
+    case = tmp_path / "case"
+    case.mkdir()
+    photo = case / "camera.jpg"
+    jpeg_with_exif(photo, "NIKON", "D750", "2026:09:20 10:30:00")
+    original = photo.read_bytes()
+    report = case / "report.json"
+
+    assert main(["scan", str(case), "--json", "-o", str(photo)]) == 2
+    assert main(["image", str(case), "--out", str(photo)]) == 2
+
+    assert photo.read_bytes() == original
+    assert "not a FileGrail report" in capsys.readouterr().err
+    assert main(["scan", str(case), "--json", "-o", str(report)]) == 0
+    assert main(["scan", str(case), "--json", "-o", str(report)]) == 0
+
+
 def test_help_lists_a_command(capsys):
     assert main(["help", "explain"]) == 0
 

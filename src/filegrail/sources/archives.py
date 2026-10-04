@@ -40,6 +40,43 @@ from .xmp import read_xmp
 
 ARCHIVE_SUFFIXES = {".zip", ".whl", ".jar", ".tar", ".tgz", ".gz", ".bz2", ".xz"}
 
+#: The most a long-name or extended-attribute header may say it carries. `tarfile`
+#: reads such a header whole, into memory, on the size the header states, and
+#: that size is a number the archive's author wrote: 859 bytes of bzip2 can say
+#: a gigabyte. Real ones hold a path or a few attributes.
+_MAX_HEADER_BYTES = 1024 * 1024
+_HEADER_TYPES = (
+    tarfile.GNUTYPE_LONGNAME,
+    tarfile.GNUTYPE_LONGLINK,
+    tarfile.XHDTYPE,
+    tarfile.XGLTYPE,
+    tarfile.SOLARIS_XHDTYPE,
+)
+
+
+class _BoundedInfo(tarfile.TarInfo):
+    """A tar entry that refuses a header larger than any real one."""
+
+    @classmethod
+    def frombuf(cls, buf: bytes | bytearray, encoding: str, errors: str) -> _BoundedInfo:
+        info = super().frombuf(buf, encoding, errors)
+        if info.type in _HEADER_TYPES and info.size > _MAX_HEADER_BYTES:
+            raise tarfile.ReadError("a header declares more than is read")
+        return info
+
+
+def _open_tar(path: Path) -> tarfile.TarFile | None:
+    """The tar at `path`, or None where it is not one.
+
+    Not `tarfile.is_tarfile` followed by `tarfile.open`: that is two opens, and
+    neither bounds what a header may ask to have read.
+    """
+    try:
+        return tarfile.open(path, tarinfo=_BoundedInfo)
+    except tarfile.TarError:
+        return None
+
+
 # Cap the work done on a single archive; a member list is cheap, but a
 # deliberately hostile archive should not be able to stall a scan.
 _MAX_MEMBERS = 50_000
@@ -79,8 +116,8 @@ def list_members(path: Path) -> dict[str, set[int]]:
                         record(info.filename, info.file_size)
             return members
 
-        if tarfile.is_tarfile(path):
-            with tarfile.open(path) as bundle:
+        if (listed := _open_tar(path)) is not None:
+            with listed as bundle:
                 for count, entry in enumerate(bundle):
                     if count >= _MAX_MEMBERS:
                         break
@@ -191,8 +228,8 @@ def _opened(path: Path) -> Iterator[Iterator[_Listed] | None]:
             yield from_zip()
         return
 
-    if tarfile.is_tarfile(path):
-        with tarfile.open(path) as bundle:
+    if (opened := _open_tar(path)) is not None:
+        with opened as bundle:
 
             def from_tar() -> Iterator[_Listed]:
                 for count, entry in enumerate(bundle):
@@ -235,7 +272,7 @@ def _from_single(path: Path) -> Iterator[_Listed]:
         with lzma.open(path, "rb") as unzipped:
             raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
     if len(raw) > _MAX_MEMBER_BYTES:
-        return
+        raise ValueError("larger than is read")
     yield (path.stem, len(raw), None, lambda: raw)
 
 

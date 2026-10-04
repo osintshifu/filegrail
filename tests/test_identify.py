@@ -13,7 +13,9 @@ import json
 from pathlib import Path
 
 from filegrail.identify import (
+    EMAIL_RE,
     PLACE,
+    _emails,
     extract,
     find_coordinates,
     normalize_domain,
@@ -272,6 +274,37 @@ def test_content_widens_the_corpus_to_what_the_document_says(tmp_path: Path):
         "ann.shaw@acme-legal.example"
     ]
     assert [entry.corpora for entry in found if entry.type == "email"] == [{"content"}]
+
+
+def test_the_password_in_a_url_login_is_not_an_email_address(tmp_path: Path):
+    record = _document(
+        tmp_path,
+        "mirror https://anna:S3cretpw@repo.example.org/pkg.tar.gz",
+        source="document-metadata",
+    )
+
+    found = extract([record], content=True)
+
+    assert [entry.type for entry in found if entry.type == "email"] == []
+
+
+def test_redaction_removes_the_credentials_from_the_urls_a_document_holds(tmp_path: Path):
+    record = _document(
+        tmp_path,
+        "https://files.example.org/r.pdf?token=AbCdEf0123456789XyZ&user=anna\n"
+        "https://anna:S3cretpw@repo.example.org/pkg.tar.gz\n",
+        source="document-metadata",
+    )
+
+    found = extract([record], content=True, redact=True)
+
+    urls = [entry for entry in found if entry.type == "url"]
+    assert len(urls) == 2
+    text = json.dumps([entry.to_dict() for entry in found])
+    assert "AbCdEf0123456789XyZ" not in text
+    assert "S3cretpw" not in text
+    assert "https://files.example.org/r.pdf" in text
+    assert "@repo.example.org" in text
 
 
 def test_a_value_from_a_document_says_where_in_the_document_it_was(tmp_path: Path):
@@ -1098,3 +1131,44 @@ def test_an_autonomous_system_number_is_taken_and_a_product_name_is_not(tmp_path
     found = sorted(e.normalized for e in extract([record], content=True) if e.type == "asn")
 
     assert found == ["AS15169", "AS174", "AS3356"]
+
+
+def test_the_address_scanner_finds_what_the_expression_it_replaced_found():
+    """`_emails` exists because `EMAIL_RE.finditer` is quadratic on a long run
+    of pieces joined by punctuation. It must not find anything different."""
+    import random
+
+    pieces = [
+        "a",
+        "Z",
+        "0",
+        ".",
+        "-",
+        "_",
+        "%",
+        "+",
+        "@",
+        " ",
+        "\n",
+        "\u00e9",
+        "x.com",
+        ".org",
+        "@a.b",
+    ]
+    chance = random.Random(11)
+    for _ in range(3000):
+        text = "".join(chance.choice(pieces) for _ in range(chance.randint(0, 40)))
+        expected = [(m.start(), m.group(0), m.group(1)) for m in EMAIL_RE.finditer(text)]
+        assert list(_emails(text)) == expected, repr(text)
+
+
+def test_a_long_run_of_joined_pieces_is_scanned_in_linear_time():
+    import time
+
+    text = "a." * 50_000
+
+    started = time.perf_counter()
+    assert list(_emails(text)) == []
+
+    # The expression it replaced took about eight seconds on this.
+    assert time.perf_counter() - started < 2

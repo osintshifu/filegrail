@@ -788,6 +788,7 @@ def render_text(
     metadata: bool = True,
     home: Path | None = None,
     unsearched: Unsearched | None = None,
+    redact: bool = False,
 ) -> str:
     """A scan, read from the whole directory down to the single record.
 
@@ -799,7 +800,7 @@ def render_text(
     theme = theme or detect()
     known = [record for record in records if record.evidence]
     unknown = [record for record in records if not record.evidence]
-    found = extract(records, content=content, metadata=metadata)
+    found = extract(records, content=content, metadata=metadata, redact=redact)
     contents = inventory(records)
     named = len(records) > 1
 
@@ -1800,6 +1801,7 @@ def render_json(
     run: dict[str, object] | None = None,
     coverage: dict[str, object] | None = None,
     found: list[Identifier] | None = None,
+    redact: bool = False,
 ) -> str:
     """The scan as JSON. `found` is the scan's identifiers where the caller
     already extracted them, so they are not searched for twice."""
@@ -1824,7 +1826,9 @@ def render_json(
     identifiers = []
     if identify:
         identifiers = (
-            found if found is not None else extract(records, content=content, metadata=metadata)
+            found
+            if found is not None
+            else extract(records, content=content, metadata=metadata, redact=redact)
         )
         payload["identifiers"] = [entry.to_dict() for entry in identifiers]
     if identify or any(

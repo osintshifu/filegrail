@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 from filegrail.cli import main
-from filegrail.pronom import WINDOW, identify
+from filegrail.pronom import _FOLDER_DEPTH, WINDOW, _folders, identify
 
 from .compound import ole
 from .pdf import document
@@ -152,3 +152,11 @@ def test_a_package_whose_members_cannot_be_read_is_named_as_its_container(tmp_pa
     report.write_bytes(bytes(data))
 
     assert _puids(report) == ["x-fmt/263"]
+
+
+def test_a_name_implies_its_folders_from_the_top_and_no_more_than_a_bound():
+    """Each implied folder is a string of its own, so a name made of slashes
+    used to cost the square of its length: a zip of 128 KB took a gigabyte."""
+    assert list(_folders("word/media/image1.png")) == ["word/", "word/media/"]
+    assert list(_folders("customXml/")) == []
+    assert len(list(_folders("a/" * 10_000 + "x.txt"))) == _FOLDER_DEPTH

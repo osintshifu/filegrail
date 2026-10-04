@@ -603,6 +603,8 @@ def _scan(rest: list[str]) -> int:
     if root.is_file() and written == root:
         print("filegrail: output file cannot be the scanned file", file=sys.stderr)
         return 2
+    if _would_replace_evidence(args.out, written, root):
+        return 2
 
     home = _home(args)
     if isinstance(home, int):
@@ -707,12 +709,15 @@ def _scan(rest: list[str]) -> int:
             unsearched=missed,
             run=run,
             coverage=coverage_document,
+            redact=args.redact,
         )
     elif args.case_jsonld:
         from .caseexport import render_case_jsonld
         from .graph import build_graph
 
-        graph = build_graph(records, extract(records, content=content, metadata=metadata))
+        graph = build_graph(
+            records, extract(records, content=content, metadata=metadata, redact=args.redact)
+        )
         report = render_case_jsonld(
             graph,
             records,
@@ -724,7 +729,9 @@ def _scan(rest: list[str]) -> int:
         from .graph import build_graph
         from .graph_export import render_graph_csv, render_graph_meta, render_graphml
 
-        graph = build_graph(records, extract(records, content=content, metadata=metadata))
+        graph = build_graph(
+            records, extract(records, content=content, metadata=metadata, redact=args.redact)
+        )
         if args.graphml:
             report = render_graphml(graph, run=run, coverage=coverage_document)
         else:
@@ -740,7 +747,15 @@ def _scan(rest: list[str]) -> int:
                     print(f"filegrail: cannot write {beside}: {error}", file=sys.stderr)
                     return 2
     elif args.html:
-        case, found = _case(records, base, home, content=content, metadata=metadata, listed=listed)
+        case, found = _case(
+            records,
+            base,
+            home,
+            content=content,
+            metadata=metadata,
+            listed=listed,
+            redact=args.redact,
+        )
         report = render_html(
             case,
             verbose=args.verbose,
@@ -771,7 +786,15 @@ def _scan(rest: list[str]) -> int:
     elif args.timeline:
         report = render_timeline(records, base, theme=theme, home=home)
     elif root.is_dir():
-        case, found = _case(records, base, home, content=content, metadata=metadata, listed=listed)
+        case, found = _case(
+            records,
+            base,
+            home,
+            content=content,
+            metadata=metadata,
+            listed=listed,
+            redact=args.redact,
+        )
         report = render_case(
             case,
             theme=theme,
@@ -802,6 +825,7 @@ def _scan(rest: list[str]) -> int:
             cluster=args.cluster,
             home=home,
             unsearched=missed,
+            redact=args.redact,
         )
     if output_format == "text" and written is None:
         command = ["filegrail", "scan", "-o", "report.html", *rest]
@@ -847,6 +871,8 @@ def _image(rest: list[str]) -> int:
 
     if root.is_file() and root.suffix.lower() not in PHOTO_SUFFIXES:
         print(f"filegrail: unsupported image: {args.path}", file=sys.stderr)
+        return 2
+    if _would_replace_evidence(args.out, args.out.resolve() if args.out else None, root):
         return 2
     if args.json:
         return _image_json(args, root)
@@ -941,6 +967,39 @@ def _image_json(args: argparse.Namespace, root: Path) -> int:
 def _saved_report(path: Path, label: str, count: int, item: str) -> None:
     unit = item if count == 1 else f"{item}s"
     print(f"{label} saved to {path} ({count} {unit})", file=sys.stderr)
+
+
+#: How far into a file a report says what it is. Every format names the tool in
+#: its first lines, except the CSV edge list, whose header row is fixed.
+_REPORT_HEAD = 4096
+_EDGE_LIST_HEAD = b"source,source_type,source_label,"
+
+
+def _is_report(path: Path) -> bool:
+    """Whether `path` is empty or an earlier report of this tool, so that writing
+    over it loses nothing. Anything else in a scanned directory is evidence."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(_REPORT_HEAD)
+    except OSError:
+        return False
+    return not head or b"filegrail" in head.lower() or head.startswith(_EDGE_LIST_HEAD)
+
+
+def _would_replace_evidence(requested: Path | None, written: Path | None, root: Path) -> bool:
+    """Whether writing the report to `written` would replace a file being
+    examined, which is said on standard error. A report this tool wrote earlier
+    may be replaced; so may a file that does not exist yet."""
+    if written is None or not written.is_file() or _is_report(written):
+        return False
+    if written != root and not (root.is_dir() and root in written.parents):
+        return False
+    print(
+        f"filegrail: {requested} is an existing file inside what is being examined "
+        "and not a FileGrail report; choose another output path",
+        file=sys.stderr,
+    )
+    return True
 
 
 def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:
@@ -1100,9 +1159,10 @@ def _case(
     content: bool,
     metadata: bool,
     listed: bool,
+    redact: bool = False,
 ) -> tuple[Case, list[Identifier] | None]:
     """The scan read as a case, with its pivots when they were asked for."""
-    found = extract(records, content=content, metadata=metadata) if listed else None
+    found = extract(records, content=content, metadata=metadata, redact=redact) if listed else None
     return analyse(records, base, survey=survey(home), identifiers=found), found
 
 

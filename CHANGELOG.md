@@ -11,6 +11,8 @@ the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 - Files and archive contents that could not be read are listed in the report.
 - File names that are not valid text are written safely in JSON, HTML and CASE output.
 - Fixed a missing value column in single-file reports.
+- `--redact` is applied to identifiers found inside documents.
+- Reports are written only over earlier FileGrail reports, never over other files in the examined directory.
 
 ## 1.1.0 - 2026-09-30
 
