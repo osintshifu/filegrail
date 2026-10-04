@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import errno
 import os
 from collections.abc import Iterator, Sized
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from stat import S_ISREG
 
 from .lineage import attach_lineage
 from .models import FILENAME, NAME_AND_SIZE, ORIGIN, EvidenceRecord, FileRecord, category
@@ -216,6 +218,11 @@ class Unsearched:
         return {"unreadable": self.unreadable, "skipped_by_name": self.by_name}
 
 
+#: What `stat` says of a name that is simply not there any more, or never was a
+#: file: not a hole in the search, so not reported as one.
+_GONE = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+
+
 def iter_files(
     root: Path,
     *,
@@ -247,11 +254,16 @@ def iter_files(
             unsearched.unreadable.append(str(error.filename))
 
     def is_file(path: Path) -> bool:
-        """A name in a directory that lists but will not stat is a hole, not a crash."""
+        """A name in a directory that lists but will not stat is a hole, not a crash.
+
+        Not `Path.is_file`, which raises for it before Python 3.14 and answers
+        False from 3.14 on - the same name would be named on one and lost on the other.
+        """
         try:
-            return path.is_file()
+            return S_ISREG(path.stat().st_mode)
         except OSError as error:
-            note_unreadable(error)
+            if error.errno not in _GONE:
+                note_unreadable(error)
             return False
 
     if root.is_file():
