@@ -38,7 +38,7 @@ metadata block, an application database, a filesystem attribute or another
 supported store. It does not have to answer "where did this come from" - EXIF
 and Recent Documents are sources too, and they answer different questions.
 
-Say five things about a new one, in code and in the tables it registers with:
+Say five things about a new one, in code and in the four tables it registers with in `models.py` (`SOURCE_CATEGORIES`, `SOURCE_MATCH`, `SOURCE_PRIORITY` and `SOURCE_LABELS`):
 
 | | |
 |:---|:---|
@@ -81,7 +81,7 @@ The same change registers the reader everywhere else a test looks: its block
 name in `BLOCK_LABELS` in `models.py`, the field naming a person in
 `AUTHOR_FIELDS` in `overview.py` (or the block in `WITHOUT_AUTHOR` when it
 names none), its extensions in a family in `filters.py` so `--type` can select
-them, and a row in the README's embedded-metadata table. Each of these is held
+them, and a row in the metadata table of `docs/FORMATS.md`. Each of these is held
 against the readers by a test, so a missed one fails rather than drifts.
 
 A reader arriving with a suffix set of its own also needs a specimen in
@@ -108,7 +108,7 @@ Build the fixture the way a real encoder writes the file, not the way the
 specification reads. The two differ, and where they differ is where the bugs
 are: a HEIC names an `Exif` item in its item table long before the payload
 appears, so a reader that stops at the first marker decodes the table and
-reports nothing — on a green suite, because no synthetic fixture had a table.
+reports nothing - on a green suite, because no synthetic fixture had a table.
 
 ## Adding a relationship to the graph
 
@@ -199,4 +199,4 @@ Keep changes focused and include tests for behaviour changes.
 Priorities, in order: correctness, honesty about what a source does and does not
 prove, privacy, portability, and only then breadth.
 
-Commit messages describe what changed and why, in prose. No trailers.
+A commit message is one short sentence in the imperative, with no prefix and no trailers.

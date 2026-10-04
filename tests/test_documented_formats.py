@@ -308,3 +308,16 @@ def test_every_documented_type_has_a_heading_in_the_report():
 
     assert _readme_types() <= set(_TYPE_SECTIONS), sorted(_readme_types() - set(_TYPE_SECTIONS))
     assert set(_TYPE_SECTIONS) <= _readme_types(), sorted(set(_TYPE_SECTIONS) - _readme_types())
+
+
+def test_the_type_example_lists_every_family_the_parser_accepts():
+    from filegrail.filters import FAMILIES
+
+    line = next(
+        line
+        for line in FORMATS.read_text(encoding="utf-8").splitlines()
+        if line.startswith("filegrail . --type image")
+    )
+    listed = {name.strip() for name in line.partition("# ")[2].split(",")}
+
+    assert listed == set(FAMILIES)

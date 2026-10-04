@@ -32,6 +32,7 @@ The mark the HTML report shows in its masthead and in its tab icon is not a file
 | `filegrail-mark-soft.png` `.svg` | mark in soft ink, light backgrounds |
 | `filegrail-mark-ivory.png` `.svg`, `filegrail-mark-ink.png` `.svg` | mark in one colour |
 | `filegrail-mark-brass`, `-cobalt`, `-iris`, `-moss`, `-oxblood`, `-steel` `.png` `.svg` | mark in the other colours of the set |
+| `filegrail-wordmark-onlight.svg`, `-ondark.svg` | the name alone, set as text in the system sans-serif font, light and dark backgrounds |
 | `filegrail-how-it-works-onlight.svg`, `-ondark.svg` | the README's "How it works" figure, both drawn by `tools/build_readme_diagram.py` |
 
 Minimum height for the mark is 16 px, and clear space around it is half its height.

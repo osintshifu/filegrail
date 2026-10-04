@@ -31,7 +31,7 @@ worth reporting:
   is a bug of the first order.
 - **A crafted file causing unbounded memory use or a hang.** Every parser here
   reads untrusted input and carries explicit bounds; a way past them counts.
-- **A metadata claim rendered as more certain than it is** — most importantly a
+- **A metadata claim rendered as more certain than it is** - most importantly a
   C2PA manifest presented without its "signature not verified" note, since the
   tool does not validate the certificate chain.
 

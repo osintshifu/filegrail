@@ -4,16 +4,16 @@ What `filegrail` can read out of a file you point it at.
 
 This is the reference list. The [README](../README.md) has the short version; this
 one is complete, and it is checked against the code by
-`tests/test_documented_formats.py` — a reader whose formats are missing here
+`tests/test_documented_formats.py` - a reader whose formats are missing here
 fails a test, and so does a format listed here that nothing reads. It cannot
 drift.
 
 Two different questions get confused a lot, so to be clear about which one this
 answers:
 
-- **What the file says about itself** — EXIF, XMP, document properties, mail
+- **What the file says about itself** - EXIF, XMP, document properties, mail
   headers. That is this file.
-- **What your machine remembers about the file** — browser history, OS origin
+- **What your machine remembers about the file** - browser history, OS origin
   attributes, quarantine records, shell history, Recent shortcuts. Different
   axis, and `filegrail doctor` tells you which of those are available.
 
@@ -21,7 +21,7 @@ answers:
 
 ## Metadata blocks
 
-**93 file extensions** have a reader. Twenty-one named metadata blocks, plus three
+**93 file extensions** have a reader. They are grouped into named metadata blocks, plus a few
 that turn up in any container that will carry them.
 
 The first column is the `block` value you get in `--json`. It is what to filter
@@ -88,14 +88,14 @@ read it wherever it turns up.
 
 | Block | Where it is found | What comes out |
 |:---|:---|:---|
-| `xmp` | Any file carrying an XMP packet — JPEG, TIFF and raw, PNG, PDF, MP4, HEIC, SVG, InDesign output, and containers nobody thought to list | Creating application, author, title, `xmpMM` derivation identifiers |
+| `xmp` | Any file carrying an XMP packet - JPEG, TIFF and raw, PNG, PDF, MP4, HEIC, SVG, InDesign output, and containers nobody thought to list | Creating application, author, title, `xmpMM` derivation identifiers |
 | `xmp-history` | The same packet | Every recorded editing step. A step with a timestamp becomes its own dated claim and lands on `--timeline`; one without stays a field, because inventing a time for it would be worse than leaving it undated. The sequence is also held against itself: a step dated before the one it follows is reported |
-| `iptc` | Any Photoshop image-resource block — JPEG, TIFF, PSD — plus TIFF tag 33723 | By-line, credit, source, copyright, headline, caption, keywords, place and date of creation |
+| `iptc` | Any Photoshop image-resource block - JPEG, TIFF, PSD - plus TIFF tag 33723 | By-line, credit, source, copyright, headline, caption, keywords, place and date of creation |
 
 XMP identifiers are also what links the scanned files to each other:
 `xmpMM:DocumentID`, `OriginalDocumentID` and `DerivedFrom` let a master, its
 export and a rendition of that export be reported as a chain. A shared
-*original* is only ever reported as a common ancestor — a template carries its
+*original* is only ever reported as a common ancestor - a template carries its
 XMP into everything made from it, and those files share an ancestor and nothing
 else.
 
@@ -205,7 +205,7 @@ For the same reason the readers that sweep raw bytes for a block, XMP and IPTC,
 are not run on an archive at all. What they would find there belongs to a
 member, and a zip is not made by Photoshop because a photograph inside it was.
 
-The archive is considered whether or not it is inside the scanned tree — a case
+The archive is considered whether or not it is inside the scanned tree - a case
 directory is usually the *result* of unpacking something that lives elsewhere.
 
 ## Files inside documents and messages
@@ -375,7 +375,7 @@ offset computed rather than counted by hand.
 
 | Reader | Specification | Why it is untested against reality |
 |:---|:---|:---|
-| Outlook `.msg` transport headers | [MS-OXMSG] | No Outlook here. The container walk underneath is not in this position — real `.doc` files exercise it |
+| Outlook `.msg` transport headers | [MS-OXMSG] | No Outlook here. The container walk underneath is not in this position - real `.doc` files exercise it |
 | Windows `.lnk` shortcuts | [MS-SHLLINK] | No Windows desktop writing Recent entries |
 | The `id3 ` chunk inside a WAV | ID3v2 in RIFF | Nothing available writes one; the rest of the RIFF reader is exercised by real files |
 | AIFF chunks | AIFF-C 1.0 | No AIFF here; the ID3 tag inside one goes through the same reader MP3 files exercise |
@@ -410,7 +410,7 @@ reported as not understood, rather than guessed at.
 ## Filtering by any of this
 
 ```bash
-filegrail . --type image          # image, video, audio, document, archive, mail, text
+filegrail . --type image          # image, video, audio, document, archive, mail, text, executable, font
 filegrail . --ext jpg,pdf         # exactly these
 filegrail . --json | jq '.files[].evidence[] | select(.block == "pdf-info")'
 ```

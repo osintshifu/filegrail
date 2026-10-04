@@ -1,7 +1,7 @@
 """Every format this project says it reads, read.
 
-`docs/FORMATS.md` and the README tables are already held against the readers by
-`test_documented_formats.py`, which checks that the two lists agree. Agreeing is
+`docs/FORMATS.md` is already held against the readers by `test_documented_formats.py`,
+which checks that the two lists agree. Agreeing is
 not the same as being true: both would still agree if an extension were added to
 a reader's set and nothing could ever be read under it.
 
