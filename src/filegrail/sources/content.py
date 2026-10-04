@@ -43,6 +43,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import NamedTuple
 
+from .compression import DAMAGED_STREAM
 from .embedded.containers import EPUB_SUFFIXES, ODF_SUFFIXES, SVG_SUFFIXES
 from .embedded.documents import OOXML_SUFFIXES, PDF_SUFFIXES
 from .embedded.parts import read_part
@@ -204,6 +205,7 @@ _UNREADABLE = (
     zipfile.BadZipFile,
     NotImplementedError,
     csv.Error,
+    *DAMAGED_STREAM,
 )
 
 

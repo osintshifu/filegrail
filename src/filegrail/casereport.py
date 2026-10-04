@@ -464,6 +464,9 @@ def _finding_nodes(case: Case, finding: Finding, files: dict[str, CaseFile]) -> 
 def _coverage(page: _Page, case: Case, unsearched: Unsearched | None) -> None:
     missed = [(path, "could not be read") for path in (unsearched.unreadable if unsearched else [])]
     missed += [(path, "skipped by name") for path in (unsearched.by_name if unsearched else [])]
+    missed += [
+        (path, "contents read in part") for path in (unsearched.partly_read if unsearched else [])
+    ]
     if not case.coverage and not missed:
         return
     page.section("EVIDENCE COVERAGE")

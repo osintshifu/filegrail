@@ -121,7 +121,10 @@ def _extended(raw: bytes) -> float | None:
         return None
     if exponent == 0x7FFF:
         return None  # infinity or not a number
-    value = float(mantissa) * 2.0 ** (exponent - 16383 - 63)
+    try:
+        value = float(mantissa) * 2.0 ** (exponent - 16383 - 63)
+    except OverflowError:
+        return None  # larger than any double, so no sample rate anybody wrote
     return -value if sign_exponent & 0x8000 else value
 
 

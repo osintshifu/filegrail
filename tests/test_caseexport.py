@@ -187,3 +187,13 @@ def test_the_case_vocabulary_names_only_relationships_that_exist():
     from filegrail.graph import TAXONOMY
 
     assert set(_KIND) <= set(TAXONOMY), sorted(set(_KIND) - set(TAXONOMY))
+
+
+def test_a_path_that_is_not_text_still_gets_an_identifier():
+    """Hashing a name needs bytes, and a byte no encoding assigns is a surrogate."""
+    name = "/case/caf\udce9.txt"
+    graph = Graph((Node(f"file:{name}", "file", name),), ())
+
+    document = _document(graph, [FileRecord(path=name, size=1, mtime=NOW)])
+
+    assert any(item["@id"].startswith("kb:") for item in document["@graph"])

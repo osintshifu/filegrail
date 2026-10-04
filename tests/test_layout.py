@@ -169,6 +169,24 @@ def test_a_long_url_survives_intact(width: int):
     assert LONG_URL in _flat(case)
 
 
+@pytest.mark.parametrize("width", WIDTHS)
+def test_a_field_value_longer_than_the_window_keeps_its_column(width: int):
+    description = "A long caption that runs well past the edge of any window. " * 8
+    one = _record(
+        "described.jpg",
+        EvidenceRecord(
+            source="device-metadata",
+            block="exif",
+            fields={"ImageDescription": description.strip(), "Make": "NIKON"},
+        ),
+    )
+
+    output = render_text([one], ROOT, theme=_theme(width))
+
+    assert description.strip().replace(" ", "") in _flat(output)
+    assert "NIKON" in output
+
+
 def _flat(output: str) -> str:
     """The report with wrapping undone, for asking whether a value survived."""
     return re.sub(r"\s+", "", output)

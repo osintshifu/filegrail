@@ -290,3 +290,66 @@ def test_nothing_is_recorded_when_nothing_was_missed(tmp_path: Path):
     scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
 
     assert not missed
+
+
+def test_a_file_that_would_not_open_is_named_and_hashing_does_not_stop_the_scan(tmp_path: Path):
+    """Its size and times are known without opening it, so it stays a record;
+    but nothing was read from inside, and the search is said to be partial."""
+    case = tmp_path / "case"
+    case.mkdir()
+    (case / "locked.txt").write_text("x", encoding="utf-8")
+    (case / "open.txt").write_text("x", encoding="utf-8")
+
+    missed, coverage = Unsearched(), ScanCoverage()
+    with unreadable(case / "locked.txt"):
+        records = scan(
+            case,
+            home=tmp_path,
+            use_shell_history=False,
+            hash_files=True,
+            unsearched=missed,
+            coverage=coverage,
+        )
+
+    hashed = {Path(record.path).name: record.sha256 is not None for record in records}
+    assert hashed == {"locked.txt": False, "open.txt": True}
+    assert [Path(path).name for path in missed.unreadable] == ["locked.txt"]
+    assert coverage.sources["file-evidence"].state == "partial"
+
+
+def test_a_name_in_a_directory_that_lists_but_will_not_stat_is_named(tmp_path: Path):
+    case = tmp_path / "case"
+    (case / "listed").mkdir(parents=True)
+    (case / "listed" / "inside.txt").write_text("x", encoding="utf-8")
+    (case / "open.txt").write_text("x", encoding="utf-8")
+
+    missed = Unsearched()
+    (case / "listed").chmod(0o444)
+    try:
+        try:
+            (case / "listed" / "inside.txt").stat()
+        except OSError:
+            pass
+        else:
+            pytest.skip("this user or platform can stat inside a directory with no search bit")
+        records = scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
+    finally:
+        (case / "listed").chmod(0o755)
+
+    assert [Path(record.path).name for record in records] == ["open.txt"]
+    assert [Path(path).name for path in missed.unreadable] == ["inside.txt"]
+
+
+def test_members_found_inside_an_archive_do_not_make_the_file_search_partial(tmp_path: Path):
+    from .test_budgets import archive_of_members
+
+    case = tmp_path / "case"
+    case.mkdir()
+    archive_of_members(case / "photos.zip", 2)
+
+    coverage = ScanCoverage()
+    records = scan(case, home=tmp_path, use_shell_history=False, coverage=coverage)
+
+    assert len(records) == 3
+    assert coverage.sources["file-evidence"].state == "searched"
+    assert coverage.sources["file-evidence"].artifacts_read == 1

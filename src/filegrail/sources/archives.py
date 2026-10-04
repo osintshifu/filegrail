@@ -33,6 +33,7 @@ from pathlib import Path
 from ..models import CONTAINER_MEMBER, EvidenceRecord
 from ..util import Allowance, iso
 from .c2pa import read_c2pa_manifest
+from .compression import DAMAGED_STREAM
 from .embedded import SUFFIXES, read_embedded_metadata, read_maker_notes
 from .iptc import read_iptc
 from .xmp import read_xmp
@@ -55,6 +56,7 @@ _UNREADABLE = (
     EOFError,
     ValueError,
     NotImplementedError,
+    *DAMAGED_STREAM,
 )
 
 
@@ -113,29 +115,42 @@ class Member:
 
 
 def read_members(
-    path: Path, *, hashing: bool = False, carried: Allowance | None = None
+    path: Path,
+    *,
+    hashing: bool = False,
+    carried: Allowance | None = None,
+    cut: list[str] | None = None,
 ) -> list[Member]:
     """The members of the archive that carry evidence, each read as a file.
 
     Read under its own name, with its own size and time, so what a member says
     stays the member's: a photograph taken in 2008 inside a zip written last
     week does not date the zip, and its fix is not the zip's location.
+
+    The archive's path is added to `cut` when something inside it went unread -
+    members past the limit, past the allowance, or damaged - because a list of
+    members that is short for any of those reasons looks like an archive that
+    simply held little.
     """
     found: list[Member] = []
+    complete = True
     try:
         with _opened(path) as archive:
             if archive is None:
                 return []
             for opened, (name, size, mtime, extract) in enumerate(archive):
                 if opened >= _MAX_READ:
+                    complete = False
                     break
                 if carried is not None and carried.spent:
                     # One archive can hold more than the whole scan's allowance,
                     # so it is checked here and not only between carriers.
+                    complete = False
                     break
                 try:
                     raw = extract()
                 except (*_UNREADABLE, RuntimeError):
+                    complete = False
                     continue
                 # Charged for the bytes that came out, not for the ones that went
                 # on to say something: decompressing is the work being bounded.
@@ -147,7 +162,9 @@ def read_members(
                 digest = hashlib.sha256(raw).hexdigest() if hashing else None
                 found.append(Member(name, size, mtime, digest, evidence))
     except _UNREADABLE:
-        return found
+        complete = False
+    if not complete and cut is not None:
+        cut.append(str(path))
     return found
 
 
@@ -205,19 +222,18 @@ _SINGLE_FILE = {".gz", ".bz2", ".xz"}
 
 
 def _from_single(path: Path) -> Iterator[_Listed]:
+    # A damaged stream raises, to `read_members`, which names the file as read in
+    # part; it is not swallowed here, where nothing would say that it happened.
     suffix = path.suffix.lower()
-    try:
-        if suffix == ".gz":
-            with gzip.open(path, "rb") as unzipped:
-                raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
-        elif suffix == ".bz2":
-            with bz2.open(path, "rb") as unzipped:
-                raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
-        else:
-            with lzma.open(path, "rb") as unzipped:
-                raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
-    except (*_UNREADABLE, EOFError, lzma.LZMAError):
-        return
+    if suffix == ".gz":
+        with gzip.open(path, "rb") as unzipped:
+            raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
+    elif suffix == ".bz2":
+        with bz2.open(path, "rb") as unzipped:
+            raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
+    else:
+        with lzma.open(path, "rb") as unzipped:
+            raw = unzipped.read(_MAX_MEMBER_BYTES + 1)
     if len(raw) > _MAX_MEMBER_BYTES:
         return
     yield (path.stem, len(raw), None, lambda: raw)

@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .sources.c2pa import read_c2pa_manifest
+from .sources.compression import DAMAGED_STREAM
 from .sources.embedded import read_embedded_metadata
 from .sources.iptc import read_iptc
 from .sources.xmp import read_xmp
@@ -40,7 +41,14 @@ from .sources.xmp import read_xmp
 #: package, and one whose members name a compression this interpreter cannot
 #: undo. Both used to leave `clean` as a traceback, taking with them any copies
 #: it had already written and telling nobody the job had stopped half done.
-_MALFORMED = (ValueError, struct.error, zipfile.BadZipFile, NotImplementedError, RuntimeError)
+_MALFORMED = (
+    ValueError,
+    struct.error,
+    zipfile.BadZipFile,
+    NotImplementedError,
+    RuntimeError,
+    *DAMAGED_STREAM,
+)
 
 #: JPEG markers that carry metadata rather than image data. `APP1` holds Exif
 #: and XMP, `APP13` the Photoshop resource block IPTC lives in, `APP11` the

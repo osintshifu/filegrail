@@ -905,7 +905,7 @@ def _block_sections(theme: Theme, record: FileRecord) -> list[str]:
             continue
         rows = [(name, str(value)) for name, value in found.fields.items()]
         lines.extend(_section(theme, _named(found), _plural(len(rows), "field")))
-        lines.extend(_table(theme, ("field", "value"), rows))
+        lines.extend(_table(theme, ("field", "value"), rows, flex=1))
     return lines
 
 
@@ -987,6 +987,8 @@ def _gaps(
             rows.append((_relative(path, root) if root else path, "could not be read"))
         for path in unsearched.by_name:
             rows.append((_relative(path, root) if root else path, "skipped by name"))
+        for path in unsearched.partly_read:
+            rows.append((_relative(path, root) if root else path, "contents read in part"))
     # The reach of the browser history is a gap only where something went
     # unresolved. On a scan that explained everything it is a fact about a
     # store nobody needed, which is not worth a section.

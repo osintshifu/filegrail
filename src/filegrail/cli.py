@@ -953,11 +953,15 @@ def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:
     changed value, and in XML it is a file no parser will open. Piping a scan
     on a console that is not UTF-8 is ordinary on Windows, and it used to
     produce a corrupt document and an exit code of 0.
+
+    A file name that is not text - a byte no encoding assigns - cannot be said in
+    UTF-8 at all. It is written as the escape for that byte, `\\udce9`, which is
+    what JSON would write for it, rather than ending the run with the scan done.
     """
     said = report if report.endswith("\n") else report + "\n"
     if out is None:
         if exact:
-            sys.stdout.buffer.write(said.encode("utf-8"))
+            sys.stdout.buffer.write(said.encode("utf-8", "backslashreplace"))
             sys.stdout.buffer.flush()
             return 0
         # A terminal that cannot show a character in a file name still gets
@@ -970,7 +974,7 @@ def _emit(report: str, out: Path | None, *, exact: bool = False) -> int:
         sys.stdout.flush()
         return 0
     try:
-        out.write_text(said, encoding="utf-8")
+        out.write_text(said, encoding="utf-8", errors="backslashreplace")
     except OSError as error:
         print(f"filegrail: cannot write {out}: {error}", file=sys.stderr)
         return 2
@@ -1000,6 +1004,7 @@ def _write_report_temporary(report: str, out: Path) -> Path:
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
+        errors="backslashreplace",
         dir=out.parent,
         prefix=f".{out.name}.",
         suffix=".tmp",

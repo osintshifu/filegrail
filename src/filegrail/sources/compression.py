@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import lzma
 import zlib
+
+#: What reading a member out of a package raises when its compressed data is
+#: damaged. None of the three is an `OSError` or a `ValueError`, so a list of
+#: "unreadable" that names only those lets one bad member end the whole scan.
+DAMAGED_STREAM = (zlib.error, lzma.LZMAError, EOFError)
 
 
 def decompress_zlib(payload: bytes, limit: int, *, require_eof: bool = True) -> bytes | None:

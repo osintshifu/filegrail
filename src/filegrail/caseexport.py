@@ -148,7 +148,9 @@ class _Identity:
         return self.named(f"path:{self._root}|{node.value}")
 
     def named(self, key: str) -> str:
-        return f"kb:{uuid.uuid5(NAMESPACE, key)}"
+        # A file name that is not text carries a surrogate, which UUID hashing
+        # cannot encode; it is hashed as the escape it is written as.
+        return f"kb:{uuid.uuid5(NAMESPACE, key.encode('utf-8', 'backslashreplace').decode())}"
 
     def part(self, owner: str, part: str) -> str:
         """A facet or a record that belongs to one thing and to nothing else."""

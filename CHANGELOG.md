@@ -5,6 +5,13 @@ All notable changes to `filegrail` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Damaged archives and documents no longer stop a scan.
+- Files and archive contents that could not be read are listed in the report.
+- File names that are not valid text are written safely in JSON, HTML and CASE output.
+- Fixed a missing value column in single-file reports.
+
 ## 1.1.0 - 2026-09-30
 
 - Terminal report layout update.

@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 from ...models import EvidenceRecord
+from ..compression import DAMAGED_STREAM
 from . import (
     aiff,
     ape,
@@ -54,6 +55,7 @@ _RECOVERABLE = (
     # `zipfile` says so with `NotImplementedError` - two patched bytes per
     # member, and none of the types above describes it.
     NotImplementedError,
+    *DAMAGED_STREAM,
 )
 
 #: Every suffix any reader here claims. Used to skip files quickly.

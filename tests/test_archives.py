@@ -1,9 +1,11 @@
+import io
 import sqlite3
+import tarfile
 import zipfile
 from pathlib import Path
 
-from filegrail.scan import scan
-from filegrail.sources.archives import is_archive, list_members
+from filegrail.scan import Unsearched, scan
+from filegrail.sources.archives import _MAX_READ, is_archive, list_members
 from tests.photo import jpeg_with_exif
 
 from .test_browser import CHROMIUM_SCHEMA, START_TIME
@@ -176,3 +178,46 @@ def test_the_archive_read_budget_bounds_members_opened_not_findings(tmp_path: Pa
     archives.read_members(archive)
 
     assert len(opened) <= archives._MAX_READ
+
+
+def _damaged(path: Path, start: int) -> None:
+    raw = bytearray(path.read_bytes())
+    for index in range(start, start + 16):
+        raw[index] ^= 0xFF
+    path.write_bytes(bytes(raw))
+
+
+def test_damaged_compressed_streams_are_named_rather_than_ending_the_scan(tmp_path: Path):
+    """`zlib.error` and `LZMAError` are neither `OSError` nor `ValueError`, so a
+    member that will not decompress used to end the run with a traceback."""
+    case = tmp_path / "case"
+    case.mkdir()
+    with zipfile.ZipFile(case / "broken.zip", "w", zipfile.ZIP_DEFLATED) as pack:
+        pack.writestr("a.txt", b"hello world " * 100)
+    _damaged(case / "broken.zip", 30 + len("a.txt"))
+    text = b"hello world " * 400
+    with tarfile.open(case / "broken.tar.xz", "w:xz") as bundle:
+        info = tarfile.TarInfo("a.txt")
+        info.size = len(text)
+        bundle.addfile(info, io.BytesIO(text))
+    _damaged(case / "broken.tar.xz", 60)
+    with zipfile.ZipFile(case / "broken.docx", "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr("docProps/core.xml", b"<cp:coreProperties>" + b"a" * 400)
+    _damaged(case / "broken.docx", 30 + len("docProps/core.xml"))
+
+    missed = Unsearched()
+    scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
+
+    assert {"broken.tar.xz", "broken.zip"} <= {Path(path).name for path in missed.partly_read}
+
+
+def test_an_archive_with_more_members_than_are_opened_is_named(tmp_path: Path):
+    case = tmp_path / "case"
+    case.mkdir()
+    _make_zip(case / "pack.zip", {f"{index}.txt": "x" for index in range(_MAX_READ + 1)})
+    _make_zip(case / "small.zip", {"only.txt": "x"})
+
+    missed = Unsearched()
+    scan(case, home=tmp_path, use_shell_history=False, unsearched=missed)
+
+    assert [Path(path).name for path in missed.partly_read] == ["pack.zip"]

@@ -114,8 +114,9 @@ class ScanCoverage:
     unreadable: list[str] = field(default_factory=list)
     skipped_by_name: list[str] = field(default_factory=list)
 
-    #: Carriers whose contents were not read because the scan's allowance for
-    #: carried content was gone. The carriers themselves were scanned.
+    #: Carriers whose contents were not read in full: the scan's allowance for
+    #: carried content was gone, or they held more members than are opened. The
+    #: carriers themselves were scanned.
     beyond_budget: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
@@ -204,9 +205,12 @@ class Unsearched:
 
     unreadable: list[str] = field(default_factory=list)
     by_name: list[str] = field(default_factory=list)
+    #: Carriers read in part: an archive with more members than are opened, or
+    #: one left closed because the scan's allowance for carried content was gone.
+    partly_read: list[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
-        return bool(self.unreadable or self.by_name)
+        return bool(self.unreadable or self.by_name or self.partly_read)
 
     def to_dict(self) -> dict[str, list[str]]:
         return {"unreadable": self.unreadable, "skipped_by_name": self.by_name}
@@ -242,6 +246,14 @@ def iter_files(
         if unsearched is not None and error.filename:
             unsearched.unreadable.append(str(error.filename))
 
+    def is_file(path: Path) -> bool:
+        """A name in a directory that lists but will not stat is a hole, not a crash."""
+        try:
+            return path.is_file()
+        except OSError as error:
+            note_unreadable(error)
+            return False
+
     if root.is_file():
         if wanted(root):
             yield root
@@ -262,7 +274,7 @@ def iter_files(
         subdirectories[:] = keep
         for name in sorted(filenames):
             path = Path(directory) / name
-            if path.is_file() and wanted(path) and (follow_symlinks or not path.is_symlink()):
+            if is_file(path) and wanted(path) and (follow_symlinks or not path.is_symlink()):
                 yield path
         if not recursive:
             break
@@ -296,7 +308,6 @@ def scan(
     """
     root = root.resolve()
     carried = Allowance(carried_budget)
-    unopened: list[str] = []
     source_stats = stats if stats is not None else {}
     missed = unsearched if unsearched is not None else Unsearched()
     files = list(
@@ -334,6 +345,7 @@ def scan(
         quarantined = Events()
 
     records: list[FileRecord] = []
+    closed: list[str] = []
     for path in files:
         try:
             stat = path.stat()
@@ -341,12 +353,19 @@ def scan(
             missed.unreadable.append(str(path))
             continue
 
+        # Its size and times are known without opening it, so the record stays;
+        # but nothing was read from inside it, and the report has to say so.
+        opens = _opens(path)
+        if not opens:
+            closed.append(str(path))
+            missed.unreadable.append(str(path))
+
         record = FileRecord(
             path=str(path),
             size=stat.st_size,
             mtime=iso(stat.st_mtime) or "",
             btime=iso(birth_time(path)),
-            sha256=sha256_file(path) if hash_files else None,
+            sha256=sha256_file(path) if hash_files and opens else None,
         )
 
         exact = downloads.get(str(path), [])
@@ -393,13 +412,13 @@ def scan(
         record.evidence.extend(recent.get(str(path), []))
         record.evidence.extend(read_shortcuts(path, stat.st_size, shortcuts))
         records.append(record)
-        if follow_archives:
+        if follow_archives and opens:
             if carried.spent:
                 # Scanned itself, not looked inside. Named so the reader knows
                 # which carriers are still to be read, and can come back.
-                unopened.append(str(path))
+                missed.partly_read.append(str(path))
             else:
-                records.extend(_member_records(record, path, hash_files, carried))
+                records.extend(_member_records(record, path, hash_files, carried, missed))
 
     if follow_archives:
         _attach_archive_records(records, downloads, downloads_by_name)
@@ -409,15 +428,16 @@ def scan(
     if coverage is not None:
         coverage.files_discovered = len(files)
         coverage.files_scanned = sum(1 for record in records if record.parent is None)
+        opened = coverage.files_scanned - len(closed)
         coverage.unreadable = list(dict.fromkeys(missed.unreadable))
         coverage.skipped_by_name = list(dict.fromkeys(missed.by_name))
-        coverage.beyond_budget = unopened
+        coverage.beyond_budget = list(dict.fromkeys(missed.partly_read))
         coverage.sources = {
             "file-evidence": SourceCoverage(
-                PARTIAL if len(records) != len(files) else SEARCHED,
+                PARTIAL if opened != len(files) else SEARCHED,
                 records=sum(len(record.evidence) for record in records),
                 artifacts_found=len(files),
-                artifacts_read=len(records),
+                artifacts_read=opened,
             ),
             **(
                 _profile_coverage(source_stats, synced, use_shell_history)
@@ -435,8 +455,16 @@ def scan(
     return records
 
 
+def _opens(path: Path) -> bool:
+    try:
+        with path.open("rb"):
+            return True
+    except OSError:
+        return False
+
+
 def _member_records(
-    archive: FileRecord, path: Path, hash_files: bool, carried: Allowance
+    archive: FileRecord, path: Path, hash_files: bool, carried: Allowance, missed: Unsearched
 ) -> list[FileRecord]:
     """The files inside a carrier that carry evidence, each a record of its own.
 
@@ -447,10 +475,10 @@ def _member_records(
     message is an embedded file, and its record says which.
     """
     if is_archive(path):
-        members = read_members(path, hashing=hash_files, carried=carried)
+        members = read_members(path, hashing=hash_files, carried=carried, cut=missed.partly_read)
         source = "archive-member"
     else:
-        members = read_children(path, hashing=hash_files, carried=carried)
+        members = read_children(path, hashing=hash_files, carried=carried, cut=missed.partly_read)
         source = "embedded-file"
     origins = [found for found in archive.evidence if category(found) == ORIGIN]
     leading = max(origins, key=lambda found: found.priority) if origins else None

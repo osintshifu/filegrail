@@ -106,7 +106,8 @@ def test_a_scan_stops_opening_carriers_once_its_budget_is_spent(tmp_path: Path):
     opened = {record.parent for record in records if record.parent is not None}
 
     assert len(opened) == 1
-    assert len(coverage.beyond_budget) == 2
+    # The first was opened and cut off by the allowance; the other two were not opened.
+    assert len(coverage.beyond_budget) == 3
     # The carriers themselves are still scanned; only their contents are not.
     assert sum(1 for record in records if record.parent is None) == 3
 

@@ -24,6 +24,7 @@ from pathlib import Path
 
 from ..util import Allowance
 from .archives import _MAX_MEMBER_BYTES, _MAX_READ, Member, _zip_time, read_member
+from .compression import DAMAGED_STREAM
 from .embedded.documents import (
     OOXML_SUFFIXES,
     PDF_SUFFIXES,
@@ -47,14 +48,24 @@ _Lister = Callable[[bytes], Iterable[Carried]]
 
 
 def read_children(
-    path: Path, *, hashing: bool = False, carried: Allowance | None = None
+    path: Path,
+    *,
+    hashing: bool = False,
+    carried: Allowance | None = None,
+    cut: list[str] | None = None,
 ) -> list[Member]:
-    """The files carried inside `path` that a reader had something to say about."""
+    """The files carried inside `path` that a reader had something to say about.
+
+    `path` is added to `cut` when something inside it went unread, for the
+    reasons `read_members` gives.
+    """
     lister = _lister(path.suffix.lower())
     if lister is None:
         return []
     try:
         if path.stat().st_size > _MAX_CARRIER_BYTES:
+            if cut is not None:
+                cut.append(str(path))
             return []
         data = path.read_bytes()
     except OSError:
@@ -62,15 +73,19 @@ def read_children(
 
     found: list[Member] = []
     names: set[str] = set()
+    complete = True
     try:
         for opened, (name, raw, mtime) in enumerate(lister(data)):
             if opened >= _MAX_READ:
+                complete = False
                 break
             if carried is not None:
                 if carried.spent:
+                    complete = False
                     break
                 carried.take(len(raw))
             if len(raw) > _MAX_MEMBER_BYTES:
+                complete = False
                 continue
             evidence = read_member(name, raw)
             if not evidence:
@@ -78,8 +93,10 @@ def read_children(
             name = _unique(name, names)
             digest = _sha256(raw) if hashing else None
             found.append(Member(name, len(raw), mtime, digest, evidence))
-    except (ValueError, zlib.error, zipfile.BadZipFile, EOFError, RuntimeError):
-        return found
+    except (ValueError, zipfile.BadZipFile, RuntimeError, *DAMAGED_STREAM):
+        complete = False
+    if not complete and cut is not None:
+        cut.append(str(path))
     return found
 
 

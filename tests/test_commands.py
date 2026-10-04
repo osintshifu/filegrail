@@ -749,3 +749,15 @@ def test_machine_output_keeps_its_bytes_on_a_console_that_cannot_encode_them(mon
     assert cli._emit("<x>caf\u00e9 \u00b7 \u5b57</x>", None, exact=True) == 0
 
     assert console.buffer.getvalue().decode("utf-8") == "<x>caf\u00e9 \u00b7 \u5b57</x>\n"
+
+
+def test_a_file_name_that_is_not_text_does_not_end_the_report(tmp_path: Path, capsysbinary):
+    """A byte no encoding assigns cannot be written as UTF-8; it is written as
+    the escape JSON would use for it, to the terminal and to a file alike."""
+    from filegrail.cli import _emit
+
+    assert _emit("caf\udce9", None, exact=True) == 0
+    assert capsysbinary.readouterr().out == b"caf\\udce9\n"
+
+    assert _emit("caf\udce9", tmp_path / "report.json", exact=True) == 0
+    assert (tmp_path / "report.json").read_text(encoding="utf-8") == "caf\\udce9\n"

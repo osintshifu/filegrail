@@ -1435,6 +1435,9 @@ def _detail(
 def _coverage(case: Case, unsearched: Unsearched | None) -> str:
     missed = [(path, "could not be read") for path in (unsearched.unreadable if unsearched else [])]
     missed += [(path, "skipped by name") for path in (unsearched.by_name if unsearched else [])]
+    missed += [
+        (path, "contents read in part") for path in (unsearched.partly_read if unsearched else [])
+    ]
     if not case.coverage and not missed:
         return ""
     states = {"found": "origin", "readable": "origin", "partial": "activity"}

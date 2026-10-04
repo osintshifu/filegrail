@@ -76,3 +76,15 @@ def test_sound_data_alone_is_not_provenance(tmp_path: Path):
     path.write_bytes(_aiff(b"AIFF", [_chunk(b"SSND", b"\x00" * 16)]))
 
     assert read_embedded_metadata(path) is None
+
+
+def test_a_sample_rate_too_large_for_a_float_is_left_out_rather_than_raised_at(tmp_path: Path):
+    comm = struct.pack(">hIh", 2, 100, 16) + struct.pack(">HQ", 0x7FFE, 1 << 63)
+    path = tmp_path / "huge.aiff"
+    path.write_bytes(_aiff(b"AIFF", [_chunk(b"COMM", comm), _chunk(b"NAME", b"Loud")]))
+
+    found = read_embedded_metadata(path)
+
+    assert found is not None
+    assert "SampleRate" not in found.fields
+    assert found.fields["Name"] == "Loud"
