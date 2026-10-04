@@ -29,6 +29,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
+from typing import TypeVar
 
 from ..models import CONTAINER_MEMBER, EvidenceRecord
 from ..util import Allowance, iso
@@ -54,15 +55,32 @@ _HEADER_TYPES = (
 )
 
 
+_Entry = TypeVar("_Entry", bound=tarfile.TarInfo)
+
+
+def _within_bound(info: _Entry) -> _Entry:
+    if info.type in _HEADER_TYPES and info.size > _MAX_HEADER_BYTES:
+        raise tarfile.ReadError("a header declares more than is read")
+    return info
+
+
 class _BoundedInfo(tarfile.TarInfo):
-    """A tar entry that refuses a header larger than any real one."""
+    """A tar entry that refuses a header larger than any real one.
+
+    Both entry points are bounded because `tarfile` has two: current releases
+    of every supported Python build an entry through `_frombuf`, and older ones
+    through the public `frombuf`, which the newer ones no longer call.
+    """
 
     @classmethod
     def frombuf(cls, buf: bytes | bytearray, encoding: str, errors: str) -> _BoundedInfo:
-        info = super().frombuf(buf, encoding, errors)
-        if info.type in _HEADER_TYPES and info.size > _MAX_HEADER_BYTES:
-            raise tarfile.ReadError("a header declares more than is read")
-        return info
+        return _within_bound(super().frombuf(buf, encoding, errors))
+
+    @classmethod
+    def _frombuf(
+        cls, buf: bytes | bytearray, encoding: str, errors: str, **options: bool
+    ) -> _BoundedInfo:
+        return _within_bound(super()._frombuf(buf, encoding, errors, **options))  # type: ignore[misc,no-any-return]
 
 
 def _open_tar(path: Path) -> tarfile.TarFile | None:
